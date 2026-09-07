@@ -1,9 +1,19 @@
-import os
-from dotenv import load_dotenv
+from pathlib import Path
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-class Settings:
-    def __init__(self, env_path: str = ".env"):
-        load_dotenv(dotenv_path=env_path)
-        self.BOT_TOKEN = os.getenv("BOT_TOKEN")
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_PATH = BASE_DIR / ".env"
 
-config = Settings()
+
+class Settings(BaseSettings):
+    BOT_TOKEN: SecretStr
+
+    model_config = SettingsConfigDict(
+        env_file=ENV_PATH,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+settings = Settings()
