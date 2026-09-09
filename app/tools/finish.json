@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "function": {
+    "name": "finish",
+    "description": "Ends the current turn when there is nothing left to do.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+}

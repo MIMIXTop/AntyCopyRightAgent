@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "function": {
+    "name": "send_message",
+    "description": "Sends a message to the user. This is the ONLY way to say anything. One call = one message.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Message text, max ~200 characters."
+        }
+      },
+      "required": ["text"]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_current_time",
+    "description": "Returns the current server date and time. MUST be called whenever the user asks about time, date, day of the week, or anything time-dependent (morning/evening, 'what time is it', 'what's the date today'). Never guess the time yourself.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+}

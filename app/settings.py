@@ -8,6 +8,7 @@ ENV_PATH = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
     BOT_TOKEN: SecretStr
+    OPEN_AI_KEY: SecretStr
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
