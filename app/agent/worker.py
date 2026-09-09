@@ -14,7 +14,7 @@ from app.logger_settings import logger
 
 
 GROQ_API_KEY = settings.OPEN_AI_KEY.get_secret_value()
-TELEGRAM_BOT_TOKEN = settings.BOT_TOKEN.get_secret_value()
+TELEGRAM_BOT_TOKEN = settings.bot_token_clean
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()

@@ -1,5 +1,6 @@
+import os
 from pathlib import Path
-from pydantic import SecretStr, field_validator
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -10,39 +11,29 @@ class Settings(BaseSettings):
     BOT_TOKEN: SecretStr
     OPEN_AI_KEY: SecretStr
 
-    @field_validator("BOT_TOKEN", "OPEN_AI_KEY", mode="bound")
-    @classmethod
-    def strip_whitespace(cls, value):
-        if isinstance(value, str):
-            return value.strip()
-        return value
-
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
+    @property
+    def bot_token_clean(self) -> str:
+        return self.BOT_TOKEN.get_secret_value().strip()
+
+    @property
+    def openai_key_clean(self) -> str:
+        return self.OPEN_AI_KEY.get_secret_value().strip()
 
 
 settings = Settings()
 
-def _debug_inspect_secrets():
-    bot_raw = settings.BOT_TOKEN.get_secret_value()
-    openai_raw = settings.OPEN_AI_KEY.get_secret_value()
+raw_token = settings.BOT_TOKEN.get_secret_value()
+cleaned_token = settings.bot_token_clean
 
-    print("\n" + "=" * 50)
-    print("🔎 [SETTINGS DEBUG]")
-    print(
-        f"• BOT_TOKEN: длина={len(bot_raw)} | "
-        f"начало={bot_raw[:4]!r} | конец={bot_raw[-4:]!r} | "
-        f"содержит пробелы={any(c.isspace() for c in bot_raw)}"
-    )
-    print(
-        f"• OPEN_AI_KEY: длина={len(openai_raw)} | "
-        f"начало={openai_raw[:4]!r} | конец={openai_raw[-4:]!r} | "
-        f"содержит пробелы={any(c.isspace() for c in openai_raw)}"
-    )
-    print("=" * 50 + "\n")
-
-_debug_inspect_secrets()
+print("=" * 50)
+print(f"DEBUG: Сырая длина токена = {len(raw_token)}")
+print(f"DEBUG: Очищенная длина токена = {len(cleaned_token)}")
+print(f"DEBUG: Начало = {cleaned_token[:5]!r} | Конец = {cleaned_token[-5:]!r}")
+print(f"DEBUG: Есть пробелы внутри токена? {' ' in cleaned_token}")
+print("=" * 50)
