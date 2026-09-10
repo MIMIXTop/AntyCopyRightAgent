@@ -1,0 +1,12 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_courses",
+    "description": "Retrieves a list of the teacher's active courses from Google Classroom. Call this tool if the user asks to see their courses, subjects, or groups.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  }
+}

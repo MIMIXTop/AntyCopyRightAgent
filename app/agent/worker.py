@@ -1,16 +1,20 @@
 import json
 
-from aiogram.enums import ChatAction
+from httpx import AsyncClient
 
-from app.handlers.get_current_time import get_current_time
-from app.settings import settings
+from aiogram.enums import ChatAction
 from aiogram import Dispatcher, Bot
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command
+
 from openai import AsyncOpenAI
+
 from app.promts.system_prompt import get_system_prompt
 from app.utils.tools import get_model_tools
 from app.logger_settings import logger
+from app.handlers.get_current_time import get_current_time
+from app.handlers.classroom import get_courses
+from app.settings import settings
 
 
 GROQ_API_KEY = settings.OPEN_AI_KEY.get_secret_value()
@@ -28,6 +32,23 @@ client = AsyncOpenAI(
 async def handle_start(message: Message):
     await message.answer("Привет! Напиши мне любой вопрос, и я отвечу.")
 
+def get_auth_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
+    url = f"{settings.CPP_SERVER_URL}/api/auth/google/start?telegram_id={telegram_id}"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Google Authorize", url=url)]
+        ]
+    )
+
+@dp.message(Command("auth"))
+async def handle_auth(message: Message):
+    await message.answer(
+        "Для доступа к вашим курсам и работам в Google Classroom необходимо авторизоваться:\n\n"
+        "Нажмите кнопку ниже, разрешите доступ в Google, после чего возвращайтесь в чат.",
+        reply_markup=get_auth_keyboard(message.from_user.id)
+    )
+
+
 @dp.message()
 async def handle_message(message: Message):
     if not message.text:
@@ -44,6 +65,8 @@ async def handle_message(message: Message):
     ]
 
     tools = get_model_tools()
+    tool_names = [t["function"]["name"] for t in tools]
+    logger.info(f"Загруженные инструменты: {tool_names}")
 
     max_iter = 10
     iter = 0
@@ -95,6 +118,27 @@ async def handle_message(message: Message):
                     logger.info("Агент завершил ход (инструмент finish)")
                     result = {"status": "ok"}
 
+
+
+                elif tool_name == "get_courses":
+                    result = await get_courses(telegram_id=message.from_user.id)
+
+                    logger.info(f"Результат get_courses: {result}")
+
+                    if isinstance(result, dict) and result.get("status") == "unauthorized":
+                        auth_url = f"{settings.CPP_SERVER_URL}/api/auth/google/start?telegram_id={message.from_user.id}"
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔗 Подключить Google", url=auth_url)]
+                        ])
+
+                        await message.answer(
+                            "Для проверки курсов мне нужен доступ к вашему Google Classroom 👇",
+                            reply_markup=keyboard
+                        )
+
+                        result = {"status": "stop", "reason": "user_needs_to_authorize"}
+                        should_finish = True
+
                 else:
                     logger.warning(f"Неизвестный инструмент: {tool_name}")
                     result = {"error": f"Unknown tool: {tool_name}"}
@@ -110,7 +154,7 @@ async def handle_message(message: Message):
                 return
         else:
             if assistant_message.content:
-                logger.debug(f"Модель завершила генерацию текстом: {assistant_message.content!r}")
+                logger.info(f"Модель завершила генерацию текстом: {assistant_message.content!r}")
             return
 
 
