@@ -13,18 +13,22 @@ from app.promts.system_prompt import get_system_prompt
 from app.utils.tools import get_model_tools
 from app.logger_settings import logger
 from app.handlers.get_current_time import get_current_time
-from app.handlers.classroom import get_courses
+from app.handlers.classroom import get_courses, get_assignments
 from app.settings import settings
 
 
 GROQ_API_KEY = settings.OPEN_AI_KEY.get_secret_value()
 TELEGRAM_BOT_TOKEN = settings.bot_token_clean
 
+user_histories = {}
+
+MAX_HISTORY_MESSAGE = 100
+
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
 client = AsyncOpenAI(
-    base_url="https://api.groq.com/openai/v1",
+    base_url="https://openrouter.ai/api/v1",
     api_key=GROQ_API_KEY,
 )
 
@@ -58,11 +62,17 @@ async def handle_message(message: Message):
     username = message.from_user.username or "unknown"
     logger.info(f"Новое сообщение от @{username} (ID: {user_id}): {message.text!r}")
 
-    content = message.text
-    agent_prompt =  [
-        {"role": "system", "content": get_system_prompt()},
-        {"role": "user", "content": content},
-    ]
+    if user_id not in user_histories:
+        user_histories[user_id] = [
+            {"role": "system", "content": get_system_prompt()}
+        ]
+
+    user_histories[user_id].append({"role": "user", "content": message.text})
+
+    if len(user_histories[user_id]) > MAX_HISTORY_MESSAGE:
+        user_histories[user_id] = [user_histories[user_id][0]] + user_histories[user_id][-(MAX_HISTORY_MESSAGES - 1):]
+
+    agent_prompt = user_histories[user_id]
 
     tools = get_model_tools()
     tool_names = [t["function"]["name"] for t in tools]
@@ -77,7 +87,8 @@ async def handle_message(message: Message):
 
         try:
             response = await client.chat.completions.create(
-                model="openai/gpt-oss-120b",
+                model="google/gemma-4-26b-a4b-it:free",
+                #model="openai/gpt-oss-120b",
                 messages=agent_prompt,
                 tools=tools,
                 tool_choice="auto",
@@ -91,7 +102,7 @@ async def handle_message(message: Message):
         agent_prompt.append(assistant_message)
 
         if assistant_message.content:
-            logger.debug(f"Внутренние мысли Киры:\n{assistant_message.content}")
+            logger.info(f"Внутренние мысли Киры:\n{assistant_message.content}")
 
         should_finish = False
 
@@ -119,6 +130,35 @@ async def handle_message(message: Message):
                     result = {"status": "ok"}
 
 
+
+                elif tool_name == "get_assignments":
+                    course_id = tool_args.get("course_id")
+
+                    if not course_id:
+                        result = {"error": "Не передан обязательный параметр course_id"}
+                        logger.warning("Агент не передал course_id для get_assignments")
+
+                    else:
+                        result = await get_assignments(
+                            telegram_id=message.from_user.id,
+                            course_id=course_id
+                        )
+
+                    logger.info(f"Результат get_assignments: {result}")
+                    if isinstance(result, dict) and result.get("status") == "unauthorized":
+                        auth_url = f"{settings.CPP_SERVER_URL}/api/auth/google/start?telegram_id={message.from_user.id}"
+
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔗 Подключить Google", url=auth_url)]
+                        ])
+
+                        await message.answer(
+                            "Для просмотра заданий мне нужен доступ к вашему Google Classroom 👇",
+                            reply_markup=keyboard
+                        )
+
+                        result = {"status": "stop", "reason": "user_needs_to_authorize"}
+                        should_finish = True
 
                 elif tool_name == "get_courses":
                     result = await get_courses(telegram_id=message.from_user.id)

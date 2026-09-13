@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_assignments",
+    "description": "Retrieves a list of assignments (labs, tests, homework) for a specified course in Google Classroom. Returns the assignment IDs, titles, and deadlines. Never invent a `course_id`! If you do not know it, call `get_courses` first.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique course identifier (ID) in Google Classroom."
+        }
+      },
+      "required": ["course_id"]
+    }
+  }
+}

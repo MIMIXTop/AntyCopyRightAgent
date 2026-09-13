@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_submissions_status",
+    "description": "Retrieves submission statuses for a specific assignment (who has submitted, who hasn't, who missed the deadline, and the grades awarded). Call this when the instructor wants to check student progress or verify the submission status of a specific lab or assignment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Course identifier."
+        },
+        "assignment_id": {
+          "type": "string",
+          "description": "The identifier for a specific assignment (courseWorkId). If you don't know it, call get_assignments first."
+        },
+        "filter_status": {
+          "type": "string",
+          "enum": ["ALL", "TURNED_IN", "MISSING", "LATE"],
+          "description": "Filter by status. TURNED_IN – submitted only; MISSING – not submitted; LATE – submitted late; ALL – all assignments."
+        }
+      },
+      "required": ["course_id", "assignment_id"]
+    }
+  }
+}
