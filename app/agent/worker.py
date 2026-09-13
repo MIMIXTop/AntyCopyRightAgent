@@ -13,7 +13,7 @@ from app.promts.system_prompt import get_system_prompt
 from app.utils.tools import get_model_tools
 from app.logger_settings import logger
 from app.handlers.get_current_time import get_current_time
-from app.handlers.classroom import get_courses, get_assignments
+from app.handlers.classroom import *
 from app.settings import settings
 
 
@@ -87,8 +87,8 @@ async def handle_message(message: Message):
 
         try:
             response = await client.chat.completions.create(
-                model="google/gemma-4-26b-a4b-it:free",
-                #model="openai/gpt-oss-120b",
+                #model="google/gemma-4-26b-a4b-it:free",
+                model="openai/gpt-oss-120b",
                 messages=agent_prompt,
                 tools=tools,
                 tool_choice="auto",
@@ -101,8 +101,8 @@ async def handle_message(message: Message):
         assistant_message = response.choices[0].message
         agent_prompt.append(assistant_message)
 
-        if assistant_message.content:
-            logger.info(f"Внутренние мысли Киры:\n{assistant_message.content}")
+        #if assistant_message.content:
+        logger.info(f"Внутренние мысли Киры:\n{assistant_message.content}")
 
         should_finish = False
 
@@ -173,6 +173,37 @@ async def handle_message(message: Message):
 
                         await message.answer(
                             "Для проверки курсов мне нужен доступ к вашему Google Classroom 👇",
+                            reply_markup=keyboard
+                        )
+
+                        result = {"status": "stop", "reason": "user_needs_to_authorize"}
+                        should_finish = True
+
+                elif tool_name == "get_submissions_status":
+                    course_id = tool_args.get("course_id")
+                    course_work_id = tool_args.get("assignment_id")
+
+                    if not course_id or not course_work_id:
+                        result = {"error": "Не передан обязательный параметр course_id"}
+                        logger.warning("Агент не передал course_id для get_assignments")
+
+                    else:
+                        result = await get_submissions_status(
+                            telegram_id=message.from_user.id,
+                            course_id=course_id,
+                            course_work_id=course_work_id
+                        )
+
+                    logger.info(f"Результат get_assignments: {result}")
+                    if isinstance(result, dict) and result.get("status") == "unauthorized":
+                        auth_url = f"{settings.CPP_SERVER_URL}/api/auth/google/start?telegram_id={message.from_user.id}"
+
+                        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="🔗 Подключить Google", url=auth_url)]
+                        ])
+
+                        await message.answer(
+                            "Для просмотра заданий мне нужен доступ к вашему Google Classroom 👇",
                             reply_markup=keyboard
                         )
 
