@@ -132,11 +132,33 @@ ML_SERVICE_URL=http://localhost:8000
 uv run python -m app.main
 ```
 
+## Структура приложения
+
+Код организован плоскими feature-модулями:
+
+```text
+app/
+├── main.py, bootstrap.py, config/, core/
+├── agent/       # LLM, история, orchestration и registry tools
+├── classroom/   # HTTP client, use cases и Classroom tools
+├── telegram/    # handlers и keyboards
+└── tools/       # JSON-схемы функций для LLM
+```
+
+`main.py` отвечает только за запуск и закрытие ресурсов. Все внешние клиенты создаются в `bootstrap.py`; agent не зависит от aiogram, а Classroom service не зависит от Telegram или LLM.
+
+Для проверки:
+
+```bash
+uv run pytest
+python -m compileall app
+```
+
 ---
 
 ## План на добавление инструментов 
 - [ ] Инструмент для определения студента по id
-- [ ] Инструмент для получения списка студентов в конкретном курсе 
+- [x] Инструмент для получения списка студентов в конкретном курсе
 - [ ] Инструмент для добавления всех участников Телеграмм группы (или конкретных)
 - [ ] Инструмент для удаления всех участников Телеграмм группы (или конкретных)
 - [ ] Инструмент для доступа к файлу/ам которые сдал студент (Google Drive API)
