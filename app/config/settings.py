@@ -10,8 +10,9 @@ class Settings(BaseSettings):
     BOT_TOKEN: SecretStr
     OPEN_AI_KEY: SecretStr
     CPP_SERVER_URL: str
-    LLM_MODEL: str = "openai/gpt-oss-120b"
+    LLM_MODEL: str
     HTTP_TIMEOUT_SECONDS: float = 15.0
+    LLM_BASE_URL: str
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
