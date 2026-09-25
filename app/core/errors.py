@@ -1,6 +1,8 @@
 class ApplicationError(Exception):
     """Base class for expected application failures."""
 
+class LLMServiceError(ApplicationError):
+    """Ошибка при обращении к провайдеру LLM"""
 
 class ValidationError(ApplicationError):
     """Input or configuration validation failed."""
@@ -21,7 +23,9 @@ class ExternalServiceUnavailableError(ApplicationError):
 
 
 class InvalidUpstreamResponseError(ApplicationError):
-    """The upstream response was not valid JSON or had an invalid shape."""
+    def __init__(self, service: str = "upstream") -> None:
+        self.service = service
+        super().__init__(f"{service} returned an invalid response")
 
 
 class ToolNotFoundError(ApplicationError):

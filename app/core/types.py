@@ -1,8 +1,12 @@
 from collections.abc import Sequence
 from typing import Protocol, Any
 
+from app.agent.models import Message, LLMResponse
+
+
 class LLMClient(Protocol):
-    async def complete(self, message: Sequence[Any], tools: list[dict[str, Any]]) -> Any:
+    async def complete(self, messages: Sequence[Message],
+                       tools: list[dict[str, Any]] | None = None) -> LLMResponse:
         ...
 
 
