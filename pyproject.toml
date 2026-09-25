@@ -5,6 +5,7 @@ requires-python = ">=3.13"
 dependencies = [
     "aiogram>=3.31.0",
     "httpx>=0.28.1",
+    "lru-cache>=0.2.3",
     "ollama>=0.6.2",
     "openai>=3.9.0",
     "pydantic>=2.13.5",

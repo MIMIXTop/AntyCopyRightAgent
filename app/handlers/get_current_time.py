@@ -1,10 +1,6 @@
 import datetime
 
 
-def get_current_time() -> dict:
+def get_current_time() -> str:
     now = datetime.datetime.now()
-    return {
-        'time': now.strftime('%H:%M:%S'),
-        'date': now.strftime('%Y-%m-%d'),
-        'weekday': now.strftime('%A'),
-    }
+    return now.strftime("%H:%M")

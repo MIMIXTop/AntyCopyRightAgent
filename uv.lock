@@ -146,6 +146,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiogram" },
     { name = "httpx" },
+    { name = "lru-cache" },
     { name = "ollama" },
     { name = "openai" },
     { name = "pydantic" },
@@ -158,6 +159,7 @@ dependencies = [
 requires-dist = [
     { name = "aiogram", specifier = ">=3.31.0" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "lru-cache", specifier = ">=0.2.3" },
     { name = "ollama", specifier = ">=0.6.2" },
     { name = "openai", specifier = ">=3.9.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
@@ -421,6 +423,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a5/31/c757d5f30a8980fd945ce7b98be10be9e4ff59c7c42f5fd86804c2e87db8/jiter-0.16.0-cp314-cp314t-win_amd64.whl", hash = "sha256:b8a3f9a6008048fe9def7bf465180564a6e458047d2ce499149cfbe73c3ae9db", size = 200366, upload-time = "2026-06-29T13:04:36.61Z" },
     { url = "https://files.pythonhosted.org/packages/7c/a2/d88de6d313d734a544a7901353ad5db67cb38dcfcd91713b7979dafc345d/jiter-0.16.0-cp314-cp314t-win_arm64.whl", hash = "sha256:0fa25b09b13075c46f5bc174f2690525a925a4fc2f7c82969a2bbabff22386ce", size = 190516, upload-time = "2026-06-29T13:04:38.004Z" },
 ]
+
+[[package]]
+name = "lru-cache"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/65/fb195865ef4c3c8f98b00531a4564c942e8f995fbc61ec7767881007ad8b/lru_cache-0.2.3.tar.gz", hash = "sha256:21cb5738eb8da421e48c373bb350bfbf6856647c05f5548a8be72cdd999ee6d4", size = 2188, upload-time = "2014-11-24T14:38:47.174Z" }
 
 [[package]]
 name = "magic-filter"

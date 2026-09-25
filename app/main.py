@@ -1,13 +1,15 @@
 import asyncio
-from app.agent.worker import bot, dp
-from app.settings import settings
+
+from app.bootstrap import build_application
+from app.config.settings import settings
 
 
-async def main():
-    await dp.start_polling(bot)
+async def main() -> None:
+    application = await build_application(settings)
+    try:
+        await application.dispatcher.start_polling(application.bot)
+    finally:
+        await application.close()
 
 if __name__ == "__main__":
-    print("Starting bot...")
-    print(f"BOT_TOKEN: {settings.BOT_TOKEN}")
-    print(f"MODEL_TOKEN: {settings.OPEN_AI_KEY}")
     asyncio.run(main())
