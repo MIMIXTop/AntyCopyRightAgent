@@ -1,0 +1,36 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_assignment",
+    "description": "Creates a new assignment (courseWork) in Google Classroom. Call this when the teacher wants to assign homework, a lab, or a test.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Course identifier."
+        },
+        "title": {
+          "type": "string",
+          "description": "Task name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the task. Leave blank if the user did not specify one."
+        },
+        "max_points": {
+          "type": "integer",
+          "description": "Maximum score for the task (e.g., 10, 100). If not specified, pass 100."
+        },
+        "due_date": {
+          "type": "string",
+          "description": "The submission deadline in YYYY-MM-DD format. If the user asks for 'by tomorrow', calculate this date using get_current_time."
+        }
+      },
+      "required": [
+        "course_id",
+        "title"
+      ]
+    }
+  }
+}

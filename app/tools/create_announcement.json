@@ -1,0 +1,24 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_announcement",
+    "description": "Posts an announcement to the Google Classroom course stream. Students will receive an email notification about it. Call this when the instructor wants to make an announcement, alert the class, or post news.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Course identifier."
+        },
+        "text": {
+          "type": "string",
+          "description": "Ad text."
+        }
+      },
+      "required": [
+        "course_id",
+        "text"
+      ]
+    }
+  }
+}

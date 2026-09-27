@@ -74,6 +74,46 @@ def register_classroom_tools(registry, classroom: ClassroomService) -> None:
             )
         )
 
+    async def create_course(context: ToolContext, args: dict):
+        telegram_id = context.user_id
+        name = args.get("name")
+        description = args.get("description")
+        section = args.get("section")
+
+        if not isinstance(name, str) or not name.strip():
+            raise ToolArgumentsError(
+                "create_course",
+                "name is required and must be a non-empty string",
+            )
+        if not isinstance(description, str):
+            raise ToolArgumentsError(
+                "create_course",
+                "description must be a string",
+            )
+        if section is not None and not isinstance(section, str):
+            raise ToolArgumentsError(
+                "create_course",
+                "section must be a string",
+            )
+
+        result = await classroom.create_course(
+            telegram_id=telegram_id,
+            course_name=name,
+            course_description=description,
+            course_section=section
+        )
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps(
+                {
+                    "status": result.status,
+                    "body": result.body,
+                },
+                ensure_ascii=False,
+                default=str
+            )
+        )
+
     registry.register(
         "get_students_list",
         get_students,
@@ -93,5 +133,10 @@ def register_classroom_tools(registry, classroom: ClassroomService) -> None:
         "get_submissions_status",
         get_submissions,
         load_schema("get_submissions_status")
+    )
+    registry.register(
+        "create_course",
+        create_course,
+        load_schema("create_course")
     )
 

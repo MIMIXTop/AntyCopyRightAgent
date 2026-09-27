@@ -1,8 +1,13 @@
+import httpx
+
+
 class ApplicationError(Exception):
     """Base class for expected application failures."""
 
+
 class LLMServiceError(ApplicationError):
     """Ошибка при обращении к провайдеру LLM"""
+
 
 class ValidationError(ApplicationError):
     """Input or configuration validation failed."""
@@ -12,10 +17,27 @@ class UnauthorizedError(ApplicationError):
     """The user must authorize access to Classroom."""
 
 
+class ForbiddenError(ApplicationError):
+    def __init__(self, service: str, detail: str = "") -> None:
+        self.service = service
+        self.detail = detail
+        message = f"{service} permission denied"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(message)
+
+
 class UpstreamServiceError(ApplicationError):
-    def __init__(self, status_code: int) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        service: str = "upstream",
+        body: str = "",
+    ) -> None:
         self.status_code = status_code
-        super().__init__(f"Upstream service returned HTTP {status_code}")
+        self.service = service
+        self.body = body
+        super().__init__(f"{service} returned HTTP {status_code}")
 
 
 class ExternalServiceUnavailableError(ApplicationError):
@@ -45,3 +67,14 @@ class AgentIterationLimitError(ApplicationError):
     def __init__(self, limit: int) -> None:
         self.limit = limit
         super().__init__(f"Agent iteration limit reached: {limit}")
+
+
+def safe_error_detail(response: httpx.Response) -> str:
+    try:
+        error = response.json().get("error", {})
+        detail = error.get("detail", [])
+        reason = detail[0].get("reason", "") if detail else None
+
+        return reason or error.get("message", "")
+    except (TypeError, ValueError, AttributeError, IndexError):
+        return ""

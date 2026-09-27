@@ -66,6 +66,13 @@ Before calling any tool, ensure all arguments are verified and strictly match ex
 - `get_assignments(course_id)`: Retrieve course assignments when this tool is available.
   - **Arguments:**
     - `course_id` (*string*, required): The unique course identifier string.
+    
+- `create_course(course_id, name, description, section)`: ...
+  - **Arguments:**
+    - `course_id` (*string*, required): The unique course identifier string.
+    - `name` (*string*, required): Name of the course. For example, "10th Grade Biology". The name is required. It must be between 1 and 750 characters and a valid UTF-8 string.
+    - `description` (*string*, not required): Optional description. For example, "We'll be learning about the structure of living creatures from a combination of textbooks, guest lectures, and lab work. Expect to be excited!" If set, this field must be a valid UTF-8 string and no longer than 30,000 characters.
+    - `section` (*string* not required): Section of the course. For example, "Period 2". If set, this field must be a valid UTF-8 string and no longer than 2800 characters.
 
 - `get_submissions_status(course_id, assignment_id)`: Retrieve submission statuses when both the course ID and assignment ID are known.
   - **Arguments:**

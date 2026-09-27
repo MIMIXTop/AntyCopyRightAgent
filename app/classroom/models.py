@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
@@ -47,3 +49,16 @@ class Student(ClassroomModel):
     id: str
     course_id: str = Field(validation_alias="courseId")
     profile: Profile
+
+class ResultRequest(ClassroomModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: int
+    body: Any
+
+
+class CreatedCourse(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    section: str | None = None

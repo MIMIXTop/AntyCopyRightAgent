@@ -1,15 +1,37 @@
 import httpx
 import logging
 
-from app.classroom.models import Course, CourseWork, StudentSubmission, Student
+from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest
 from app.core.errors import (
     ExternalServiceUnavailableError,
     InvalidUpstreamResponseError,
-    UpstreamServiceError,
+    UpstreamServiceError, ForbiddenError, UnauthorizedError,
+    safe_error_detail
 )
 from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _check_error(response: httpx.Response):
+    if response.status_code == 200:
+        return
+
+    if response.status_code == 401:
+        raise UnauthorizedError()
+
+    if response.status_code == 403:
+        raise ForbiddenError(
+            service="Classroom",
+            detail=safe_error_detail(response),
+        )
+
+    if response.is_error:
+        raise UpstreamServiceError(
+            response.status_code,
+            service="Classroom",
+            body=response.json(),
+        )
 
 
 class ClassroomClient:
@@ -22,10 +44,11 @@ class ClassroomClient:
 
         try:
             res = await self.http.get(url, params=params)
+
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
-        if res.is_error:
-            raise UpstreamServiceError(res.status_code)
+
+        _check_error(res)
         return self._parse_list(res, Course, "courses", "courses")
 
     async def get_course_works(self, telegram_id: int, course_id: int) -> list[CourseWork]:
@@ -36,8 +59,8 @@ class ClassroomClient:
             res = await self.http.get(url, params=params)
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
-        if res.is_error:
-            raise UpstreamServiceError(res.status_code)
+
+        _check_error(res)
         return self._parse_list(res, CourseWork, "course works", "courseWork")
 
     async def get_submissions(self, telegram_id: int, course_id: int, course_work_id: int) -> list[StudentSubmission]:
@@ -48,8 +71,8 @@ class ClassroomClient:
             res = await self.http.get(url, params=params)
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
-        if res.is_error:
-            raise UpstreamServiceError(res.status_code)
+
+        _check_error(res)
         return self._parse_list(res, StudentSubmission, "submissions", "studentSubmissions")
 
     async def get_student_in_course(self, telegram_id: int, course_id: int) -> list[Student]:
@@ -60,9 +83,33 @@ class ClassroomClient:
             res = await self.http.get(url, params=params)
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
-        if res.is_error:
-            raise UpstreamServiceError(res.status_code)
+
+        _check_error(res)
         return self._parse_list(res, Student, "students", "students")
+
+    async def create_course(self, telegram_id: int, course_name: str, course_description: str = "", course_section: str | None = None) -> ResultRequest:
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses"
+        params = {"telegram_id": telegram_id}
+
+        body = {
+            "name": course_name,
+            "description": course_description,
+            "courseState": "ACTIVE"
+        }
+
+        if course_section is not None:
+            body["section"] = course_section
+
+        try:
+            res = await self.http.post(url, params=params, json=body)
+        except httpx.TimeoutException as error:
+            raise ExternalServiceUnavailableError from error
+
+        _check_error(res)
+        return ResultRequest(
+            status=res.status_code,
+            body=res.json()
+        )
 
     @staticmethod
     def _parse_list(

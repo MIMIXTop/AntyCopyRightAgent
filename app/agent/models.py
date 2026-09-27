@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Callable, Any, Awaitable
 
 
@@ -36,3 +37,13 @@ ToolHandler = Callable[
     [ToolContext, dict[str, Any]],
     Awaitable[ToolResult]
 ]
+
+@dataclass
+class PendingCourseCreated:
+    id: str
+    chat_id: int
+    user_id: int
+    name: str
+    description: str
+    section: str | None
+    expires_at: datetime
