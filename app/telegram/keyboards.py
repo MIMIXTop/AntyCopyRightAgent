@@ -37,3 +37,17 @@ def get_course_announcement_keyboard(pending_id: str) -> InlineKeyboardMarkup:
             )
         ]]
     )
+
+def get_course_work_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"course:work:create:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"course:work:create:cancel:{pending_id}",
+            )
+        ]]
+    )

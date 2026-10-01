@@ -185,6 +185,61 @@ class ClassroomClient:
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 
+
+    async def create_assigment(
+            self,
+            telegram_id: int,
+            course_id: str,
+            title: str,
+            description: str = "",
+            max_points: int | None = 100,
+            due_date: str | None = None,
+            due_time: str | None = None,
+            materials: list[dict] | None = None,
+            state: str = "PUBLISHED"
+    ) -> ResultRequest:
+
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork"
+        params = {"telegram_id": telegram_id}
+
+        body = {
+            "title": title,
+            "workType": "ASSIGNMENT",
+            "state": state,
+        }
+
+        if description:
+            body["description"] = description
+
+        if max_points is not None:
+            body["maxPoints"] = max_points
+
+        if due_date:
+            try:
+                y, m, d = map(int, due_date.split("-"))
+                body["dueDate"] = {"year": y, "month": m, "day": d}
+
+                if due_time:
+                    h, minute = map(int, due_time.split(":"))
+                    body["dueTime"] = {"hours": h, "minutes": minute}
+                else:
+                    body["dueTime"] = {"hours": 23, "minutes": 59}
+            except ValueError:
+                logger.warning("Не удалось распарсить due_date: %s", due_date)
+
+        if materials:
+            body["materials"] = materials
+
+        try:
+            response = await self.http.post(url, params=params, json=body)
+            _check_error(response)
+            return ResultRequest(
+                status=response.status_code,
+                body=response.json()
+            )
+        except httpx.TimeoutException as error:
+            raise ExternalServiceUnavailableError from error
+
     async def create_announcement(self, telegram_id: int, course_id: str, text: str, state: str | None = None,
                                   materials: list[dict] | None = None) -> ResultRequest:
         logger.info(

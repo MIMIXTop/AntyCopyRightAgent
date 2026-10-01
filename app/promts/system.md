@@ -106,6 +106,17 @@ Before calling any tool, ensure all arguments are verified and strictly match ex
   - **Arguments:**
     - `course_id` (*string*, required): The unique course identifier string.
     - `assignment_id` (*string*, required): The unique assignment identifier string returned by `get_assignments`.
+    
+- `create_assignment(course_id, title, description, max_points, due_date, due_time, links, telegram_file_ids)`: Create and publish or draft a coursework assignment in Google Classroom.
+  - **Arguments:**
+    - `course_id` (*string*, required): The exact unique course identifier returned by `get_courses`. Never invent an ID.
+    - `title` (*string*, required): The title of the assignment (e.g., "Лабораторная работа №2").
+    - `description` (*string*, not required): Detailed task instructions, requirements, or problem statement.
+    - `max_points` (*integer*, not required): Maximum possible grade for this assignment. Must be an integer greater than or equal to 0 (e.g., 10 or 100). Never pass negative values. Defaults to 100 if unspecified.
+    - `due_date` (*string*, not required): Deadline date formatted strictly as `YYYY-MM-DD`. If the user gives a relative date ("до следующего вторника", "завтра"), calculate the exact date using `get_current_time`.
+    - `due_time` (*string*, not required): Deadline time in 24-hour format `HH:MM` (e.g., "23:59"). Only provide this if `due_date` is also present.
+    - `links` (*array of strings*, not required): Explicit list of valid HTTP(S) links provided by the teacher (e.g., GitHub repositories, documentation).
+    - `telegram_file_ids` (*array of strings*, not required): List of Telegram file IDs provided by runtime context when the teacher attaches files. Do not invent these IDs.
 
 *Note on Identifiers:* Pass `course_id` and `assignment_id` exactly as returned by their respective tools. Do not replace identifiers with names or titles. All IDs in the current schema are strictly strings.
 
@@ -134,6 +145,19 @@ Before calling any tool, ensure all arguments are verified and strictly match ex
 5. If the teacher supplied links or Drive file IDs, pass them exactly as provided. Never invent IDs or URLs.
 6. The tool asks for one explicit confirmation. Telegram files attached to the same message are supplied by runtime and must not be invented by the model.
 7. Once the tool returns a successful response (or confirmation state), inform the teacher via `send_message` and call `finish`.
+
+### Flow 4: "Create a new assignment / lab in course [Name/ID]"
+1. If `course_id` is unknown, invoke `get_courses` first to resolve the course name to an exact ID.
+2. Match the requested course name exclusively against the returned courses list.
+3. If multiple courses match or the target is ambiguous, call `send_message` asking the teacher to clarify; never call `create_assignment` on an ambiguous target.
+4. Formulate the assignment parameters:
+   - Extract or generate an appropriate `title` and `description` based on the teacher's request.
+   - If points are requested, ensure `max_points >= 0`. Default to 100 if unmentioned.
+   - If a deadline is mentioned, resolve the exact calendar date using `get_current_time` and format as `YYYY-MM-DD`.
+   - Pass any teacher-supplied URLs in `links`.
+5. Call `create_assignment` with the verified arguments.
+6. The runtime will hold the task and present a confirmation keyboard to the teacher.
+7. Once the tool returns a paused/confirmation state, inform the teacher via `send_message` and call `finish`.
 
 ---
 

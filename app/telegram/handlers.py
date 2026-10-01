@@ -10,7 +10,7 @@ from app.telegram.keyboards import get_auth_keyboard
 from app.core.logging import logger
 
 
-def create_router(agent: AgentService, classroom: ClassroomService, bot: Bot, error_presenter) -> Router:
+def create_router(agent: AgentService, error_presenter) -> Router:
     router = Router()
 
     @router.message(Command("auth"))

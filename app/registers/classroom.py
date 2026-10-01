@@ -212,6 +212,54 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             terminal=True
         )
 
+    async def create_course_work_tool(context: ToolContext, args: dict):
+        course_id = args.get("course_id")
+        title = args.get("title")
+        description = args.get("description")
+        max_points = args.get("max_points")
+        due_date = args.get("due_date")
+        due_time = args.get("due_time")
+        links = args.get("links", [])
+        telegram_file_ids = args.get("telegram_file_ids", [])
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("create_assignment", "course_id is required")
+        if not isinstance(title, str) or not title.strip():
+            raise ToolArgumentsError("create_assignment", "title is required")
+
+        pending_id = classroom.hold_course_work(
+            telegram_id=context.user_id,
+            course_id=course_id,
+            title=title,
+            description=description,
+            max_points=max_points,
+            due_date=due_date,
+            due_time=due_time,
+            links=links,
+            telegram_file_ids=telegram_file_ids
+        )
+
+        course = await classroom.get_concrete_course(context.user_id, course_id)
+
+        await telegram.request_course_work(
+            chat_id=context.user_id,
+            pending_id=pending_id,
+            title=title,
+            course_name=course.name,
+            due_date=due_date
+        )
+
+        return ToolResult(
+            call_id=context.call_id,
+            content='{"status": "paused", "reason": "waiting_for_user_confirmation"}',
+            terminal=True
+        )
+
+    registry.register(
+        "create_assignment",
+        create_course_work_tool,
+        load_schema("create_assignment")
+    )
     registry.register(
         "create_announcement",
         create_course_announcement_tool,

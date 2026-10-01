@@ -3,7 +3,7 @@ import io
 from aiogram import Bot
 
 from app.core.errors import ApplicationError
-from app.telegram.keyboards import get_course_confirm_keyboard, get_course_announcement_keyboard
+from app.telegram.keyboards import get_course_confirm_keyboard, get_course_announcement_keyboard, get_course_work_keyboard
 from app.core.logging import logger
 
 class TelegramService:
@@ -56,4 +56,26 @@ class TelegramService:
             chat_id=chat_id,
             text=f"Вы уверены, что хотите в курс **'{course_name}'** добавить следующий анонс:\n\n {announcement_text}?",
             reply_markup=get_course_announcement_keyboard(pending_id=pending_id),
+        )
+
+    async def request_course_work(
+            self,
+            chat_id: int,
+            pending_id: str,
+            title: str,
+            course_name: str,
+            due_date: str | None = None,
+    ):
+        deadline_text = f"\n⏰ Дедлайн: <b>{due_date}</b>" if due_date else ""
+        msg_text = (
+            f"📝 Создать задание в курсе <b>«{course_name}»</b>?\n\n"
+            f"Название: <b>{title}</b>"
+            f"{deadline_text}"
+        )
+
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=msg_text,
+            reply_markup=get_course_work_keyboard(pending_id=pending_id),
+            parse_mode="HTML",
         )

@@ -143,5 +143,77 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             )
             classroom.remove_pending_announcement(pending_id)
 
+    @router.callback_query(F.data.startswith("course:work:create:cancel:"))
+    async def cancel_work_creation(call: CallbackQuery):
+        pending_id = call.data.split(":")[-1]
+        data = classroom.get_pending_assignment(pending_id)
+        await history_store.append(
+            call.message.chat.id,
+            Message(
+                "system", f"Пользователь ОТМЕНИЛ создание работы для курса '{data['course_id']}'.")
+        )
+        await call.message.edit_text("❌ Создание задания отменено.")
+        await call.answer()
+        classroom.remove_pending_assignment(pending_id)
+
+    @router.callback_query(F.data.startswith("course:work:create:confirm:"))
+    async def confirm_work_creation(call: CallbackQuery):
+        pending_id = call.data.split(":")[-1]
+        data = classroom.get_pending_assignment(pending_id)
+        if not data:
+            await call.answer("Ошибка: действие устарело.", show_alert=True)
+            return
+
+        await call.message.edit_text("⏳ Загружаю материалы и публикую задание...")
+        materials = []
+
+        for link_url in data.get("links", []):
+            if link_url.startswith("http"):
+                materials.append({"link": {"url": link_url}})
+
+        tg_file_ids = data.get("telegram_file_ids", [])
+        if tg_file_ids:
+            course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
+            folder_id = course.teacher_folder.id if course.teacher_folder else None
+
+            for fid in tg_file_ids:
+                fname, fbytes = await telegram.get_file_content(fid)
+                drive_file = await classroom.upload_to_drive(
+                    telegram_id=data["telegram_id"],
+                    file_name=fname,
+                    content=fbytes,
+                    mime_type="application/octet-stream",
+                    parent_folder_id=folder_id
+                )
+                materials.append({
+                    "driveFile": {
+                        "driveFile": {"id": drive_file["id"]},
+                        "shareMode": "VIEW"
+                    }
+                })
+
+        try:
+            res = await classroom.create_assignment(
+                telegram_id=data["telegram_id"],
+                course_id=data["course_id"],
+                title=data["title"],
+                description=data["description"],
+                max_points=data["max_points"],
+                due_date=data["due_date"],
+                due_time=data["due_time"],
+                materials=materials if materials else None
+            )
+            await call.message.edit_text(f"✅ Задание <b>«{data['title']}»</b> успешно опубликовано!", parse_mode="HTML")
+
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", f"Задание '{data['title']}' успешно создано в курсе {data['course_id']}.")
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при создании задания: {e}")
+            await call.message.edit_text("❌ Ошибка при создании задания.")
+
+        classroom.remove_pending_assignment(pending_id)
+        await call.answer()
 
     return router

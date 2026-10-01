@@ -11,23 +11,42 @@ class ClassroomService:
         self.client = client
         self._pending_courses = {}
         self._pending_announcements = {}
-        self._cache_files = {}
+        self._pending_course_works = {}
         logger.info("ClassroomService initialized")
 
-
-    def append_file_in_cache(self, pending_id: str, file_name: str, content: bytes, mime_info: str):
-        self._cache_files[pending_id] = {
-            "file_name": file_name,
-            "content": content,
-            "mime_info": mime_info
+    def hold_course_work(
+            self,
+            telegram_id: int,
+            course_id: str,
+            title: str,
+            description: str,
+            max_points: int | None,
+            due_date: str | None,
+            due_time: str | None,
+            links: list[str] | None,
+            telegram_file_ids: list[str] | None
+    ):
+        pending_id = str(uuid.uuid4())[:8]
+        self._pending_course_works[pending_id] = {
+            "telegram_id": telegram_id,
+            "course_id": course_id,
+            "title": title,
+            "description": description,
+            "max_points": max_points,
+            "due_date": due_date,
+            "due_time": due_time,
+            "links": links or [],
+            "telegram_file_ids": telegram_file_ids or []
         }
 
-    def remove_file_in_cache(self, pending_id: str, file_name: str):
-        vec = self._cache_files.get(pending_id)
-        if isinstance(vec, list):
-            self._cache_files[pending_id] = [item for item in vec if item["file_name"] == file_name]
-        else:
-            self._cache_files.pop(pending_id, None)
+        return pending_id
+
+    def get_pending_assignment(self, pending_id: str) -> dict | None:
+        return self._pending_course_works.get(pending_id, None)
+
+
+    def remove_pending_assignment(self, pending_id: str) -> None:
+        return self._pending_course_works.pop(pending_id, None)
 
     def hold_course_announcement(
         self,
@@ -187,6 +206,32 @@ class ClassroomService:
         )
 
         return announcement
+
+    async def create_assignment(
+        self,
+            telegram_id: int,
+            course_id: str,
+            title: str,
+            description: str = "",
+            max_points: int | None = 100,
+            due_date: str | None = None,
+            due_time: str | None = None,
+            materials: list[dict] | None = None
+    ):
+        self._validate_telegram_id(telegram_id)
+        if not title or not title.strip():
+            raise ValidationError("Title is required")
+
+        return await self.client.create_assigment(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            title=title,
+            description=description,
+            max_points=max_points,
+            due_date=due_date,
+            due_time=due_time,
+            materials=materials
+        )
 
     async def upload_to_drive(self, telegram_id: int, file_name: str, content: bytes, mime_type: str, parent_folder_id: str | None = None):
         logger.info("ClassroomService.upload_to_drive called: telegram_id=%s", telegram_id)

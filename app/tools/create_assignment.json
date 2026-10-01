@@ -1,0 +1,48 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_assignment",
+    "description": "Creates and publishes or drafts a coursework/assignment (e.g. lab, homework, test) in Google Classroom. Can optionally include deadlines, max points, web links, or attached files. If course_id is unknown, invoke get_courses first.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Assignment title (e.g. 'Лабораторная работа №1')."
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed instructions, requirements, or task descriptions."
+        },
+        "max_points": {
+          "type": "integer",
+          "description": "Maximum points for this assignment (e.g. 10 or 100). Default is 100."
+        },
+        "due_date": {
+          "type": "string",
+          "description": "Deadline date in YYYY-MM-DD format (e.g. '2026-10-15'). If the user says 'до завтра' or gives a relative date, calculate it using get_current_time."
+        },
+        "due_time": {
+          "type": "string",
+          "description": "Deadline time in 24-hour HH:MM format (e.g. '23:59' or '18:00'). Optional."
+        },
+        "links": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of web URLs to attach to the assignment (e.g. GitHub repos)."
+        },
+        "telegram_file_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of telegram_file_id from user's messages to upload and attach."
+        }
+      },
+      "required": ["course_id", "title"],
+      "additionalProperties": false
+    }
+  }
+}
