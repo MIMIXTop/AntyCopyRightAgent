@@ -1,0 +1,33 @@
+{
+  "type": "function",
+  "function": {
+    "name": "invite_user",
+    "description": "Sends an email invitation to join the course. Call this when you need to add a student or a second instructor to the course.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Course identifier (ID). If you don't know it, call get_courses first."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email (Gmail or corporate domain)."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "STUDENT",
+            "TEACHER"
+          ],
+          "description": "The user's role in the course. Use STUDENT by default unless otherwise specified."
+        }
+      },
+      "required": [
+        "course_id",
+        "email",
+        "role"
+      ]
+    }
+  }
+}

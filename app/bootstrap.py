@@ -18,6 +18,8 @@ from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
 from app.core.logging import configure_logging
 from app.telegram.handlers import create_router
+from app.telegram.callbacks import create_callback_router
+from app.core.logging import logger
 
 
 @dataclass
@@ -35,6 +37,7 @@ class Application:
 
 
 async def build_application(settings: Settings) -> Application:
+    logger.info("Application bootstrap started: cpp_server=%s llm_model=%s", settings.CPP_SERVER_URL, settings.LLM_MODEL)
     configure_logging()
     http_client = httpx.AsyncClient(
         base_url=settings.CPP_SERVER_URL.rstrip("/"),
@@ -49,7 +52,7 @@ async def build_application(settings: Settings) -> Application:
     classroom = ClassroomService(ClassroomClient(http_client))
     telegram = TelegramService(bot)
     registry = ToolRegistry()
-    register_classroom_tools(registry, classroom)
+    register_classroom_tools(registry, classroom, telegram)
     register_telegram_tools(registry ,telegram)
 
     async def current_time(context: ToolContext, arguments: dict):
@@ -73,13 +76,23 @@ async def build_application(settings: Settings) -> Application:
     registry.register("get_current_time", current_time, load_schema("get_current_time"))
     registry.register("finish", finish, load_schema("finish"))
 
+    storage = InMemoryHistoryStore(
+            system_message=Message("system", load_system_prompt()),
+    )
+
     agent = AgentService(
         llm=OpenAIAdapter(llm_client, settings.LLM_MODEL),
-        history=InMemoryHistoryStore(
-            system_message=Message("system", load_system_prompt()),
-        ),
+        history= storage,
         tools=registry,
     )
     dispatcher = Dispatcher()
     dispatcher.include_router(create_router(agent, telegram))
+    dispatcher.include_router(
+        create_callback_router(
+            classroom=classroom,
+            history_store=storage,
+            telegram=telegram,
+        )
+    )
+    logger.info("Application bootstrap completed")
     return Application(bot, dispatcher, http_client, llm_client)

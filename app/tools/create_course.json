@@ -1,0 +1,32 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_course",
+    "description": "Creates a new course in Google Classroom. Call this when the instructor asks to create, open, or set up a new course or subject.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 750,
+          "minLength": 1,
+          "description": "Course title (e.g., 'Advanced Mathematics')."
+        },
+        "section": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Section or group number (e.g., 'Group 21-IT'). Optional parameter.(Optional)"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 30000,
+          "description": "Brief course description. Optional parameter.(Optional)"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

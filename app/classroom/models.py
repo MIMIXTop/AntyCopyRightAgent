@@ -1,4 +1,8 @@
+from typing import Any
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+
 
 
 class ClassroomModel(BaseModel):
@@ -7,10 +11,15 @@ class ClassroomModel(BaseModel):
         populate_by_name=True,
     )
 
+class TeacherFolder(ClassroomModel):
+    id: str
+    name: str | None = None
 
 class Course(ClassroomModel):
     id: str
     name: str
+    course_state: str | None = Field(default=None, validation_alias="courseState")
+    teacher_folder: TeacherFolder | None = Field(default=None, alias="teacherFolder")
 
 
 class CourseWork(ClassroomModel):
@@ -47,3 +56,16 @@ class Student(ClassroomModel):
     id: str
     course_id: str = Field(validation_alias="courseId")
     profile: Profile
+
+class ResultRequest(ClassroomModel):
+    model_config = ConfigDict(extra="ignore")
+
+    status: int
+    body: Any
+
+
+class CreatedCourse(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    section: str | None = None

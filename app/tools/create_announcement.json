@@ -1,0 +1,41 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_announcement",
+    "description": "Publishes or drafts an announcement in the Google Classroom stream, optionally attaching web links or Google Drive files. If course_id is unknown, call get_courses first.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID."
+        },
+        "text": {
+          "type": "string",
+          "description": "Announcement text/message."
+        },
+        "links": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 20,
+          "items": { "type": "string", "format": "uri" },
+          "description": "List of web URLs to attach to this announcement (e.g. ['https://github.com/...'])."
+        },
+        "drive_file_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 20,
+          "items": { "type": "string" },
+          "description": "List of Google Drive file IDs to attach."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["PUBLISHED", "DRAFT"],
+          "description": "Publication state. Defaults to PUBLISHED."
+        }
+      },
+      "required": ["course_id", "text"],
+      "additionalProperties": false
+    }
+  }
+}
