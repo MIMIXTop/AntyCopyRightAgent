@@ -1,5 +1,6 @@
 import httpx
 import logging
+import json
 
 from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest
 from app.core.errors import (
@@ -14,7 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def _check_error(response: httpx.Response):
-    if response.status_code == 200:
+    logger.info(
+        "Classroom HTTP response: method=%s url=%s status=%s",
+        response.request.method if response.request else "unknown",
+        response.request.url if response.request else "unknown",
+        response.status_code,
+    )
+    if 200 <= response.status_code < 300:
         return
 
     if response.status_code == 401:
@@ -27,18 +34,40 @@ def _check_error(response: httpx.Response):
         )
 
     if response.is_error:
+        try:
+            error_body = response.json()
+        except Exception:
+            error_body = {"text": response.text}
+
+        logger.error(f"Classroom API Error [{response.status_code}]: {error_body}")
+
         raise UpstreamServiceError(
             response.status_code,
             service="Classroom",
-            body=response.json(),
+            body=error_body,
         )
 
 
 class ClassroomClient:
     def __init__(self, http: httpx.AsyncClient) -> None:
         self.http = http
+        logger.info("ClassroomClient initialized")
+
+    async def get_concrete_course(self, telegram_id: int, course_id: int) -> Course:
+        logger.info("ClassroomClient.get_concrete_course called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}"
+        params = {"telegram_id": telegram_id}
+
+        try:
+            res = await self.http.get(url, params=params)
+        except httpx.TimeoutException as error:
+            raise ExternalServiceUnavailableError from error
+
+        _check_error(res)
+        return Course.model_validate(res.json())
 
     async def get_course(self, telegram_id: int) -> list[Course]:
+        logger.info("ClassroomClient.get_course called: telegram_id=%s", telegram_id)
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses"
         params = {"telegram_id": telegram_id}
 
@@ -52,6 +81,7 @@ class ClassroomClient:
         return self._parse_list(res, Course, "courses", "courses")
 
     async def get_course_works(self, telegram_id: int, course_id: int) -> list[CourseWork]:
+        logger.info("ClassroomClient.get_course_works called: telegram_id=%s course_id=%s", telegram_id, course_id)
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork"
         params = {"telegram_id": telegram_id}
 
@@ -64,6 +94,12 @@ class ClassroomClient:
         return self._parse_list(res, CourseWork, "course works", "courseWork")
 
     async def get_submissions(self, telegram_id: int, course_id: int, course_work_id: int) -> list[StudentSubmission]:
+        logger.info(
+            "ClassroomClient.get_submissions called: telegram_id=%s course_id=%s course_work_id=%s",
+            telegram_id,
+            course_id,
+            course_work_id,
+        )
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork/{course_work_id}/studentSubmissions"
         params = {"telegram_id": telegram_id}
 
@@ -76,6 +112,7 @@ class ClassroomClient:
         return self._parse_list(res, StudentSubmission, "submissions", "studentSubmissions")
 
     async def get_student_in_course(self, telegram_id: int, course_id: int) -> list[Student]:
+        logger.info("ClassroomClient.get_student_in_course called: telegram_id=%s course_id=%s", telegram_id, course_id)
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/students"
         params = {"telegram_id": telegram_id}
 
@@ -87,36 +124,155 @@ class ClassroomClient:
         _check_error(res)
         return self._parse_list(res, Student, "students", "students")
 
-    async def create_course(self, telegram_id: int, course_name: str, course_description: str = "", course_section: str | None = None) -> ResultRequest:
+    async def create_course(self, telegram_id: int, course_name: str, course_description: str = "",
+                            course_section: str | None = None) -> ResultRequest:
+        logger.info(
+            "ClassroomClient.create_course called: telegram_id=%s course_name=%r course_description=%r course_section=%r",
+            telegram_id,
+            course_name,
+            course_description,
+            course_section,
+        )
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses"
         params = {"telegram_id": telegram_id}
 
         body = {
             "name": course_name,
-            "description": course_description,
-            "courseState": "ACTIVE"
+            "ownerId": "me",
         }
 
         if course_section is not None:
             body["section"] = course_section
 
+        if course_description != "":
+            body["description"] = course_description
+
         try:
             res = await self.http.post(url, params=params, json=body)
+            logger.info("Classroom create course POST sent: params=%s body=%s", params, body)
+            _check_error(res)
+
+            course_data = res.json()
+            course_id = course_data.get("id")
+
+            if course_id:
+                patch_url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}"
+                patch_params = {
+                    "telegram_id": telegram_id,
+                    "updateMask": "courseState"
+                }
+                patch_body = {
+                    "courseState": "ACTIVE"
+                }
+                try:
+
+                    patch_res = await self.http.patch(patch_url, params=patch_params, json=patch_body)
+                    _check_error(patch_res)
+
+                    course_data["courseState"] = "ACTIVE"
+                    logger.info("Курс успешно активирован автоматически (Workspace Teacher).")
+                except Exception as e:
+                    if "CourseStateDenied" in str(e):
+                        logger.warning("Личный аккаунт: авто-активация недоступна. Курс создан как PROVISIONED.")
+                        course_data["courseState"] = "PROVISIONED"
+                    else:
+                        raise e
+
+            return ResultRequest(
+                status=res.status_code,
+                body=course_data
+            )
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 
-        _check_error(res)
-        return ResultRequest(
-            status=res.status_code,
-            body=res.json()
+    async def create_announcement(self, telegram_id: int, course_id: str, text: str, state: str | None = None,
+                                  materials: list[dict] | None = None) -> ResultRequest:
+        logger.info(
+            "ClassroomClient.create_announcement called: telegram_id=%s course_id=%s state=%s materials_count=%s",
+            telegram_id,
+            course_id,
+            state,
+            len(materials or []),
         )
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/announcements"
+        params = {"telegram_id": telegram_id}
+
+        body = {
+            "text": text,
+        }
+
+        if state is not None:
+            body["state"] = state
+
+        if materials:
+            body["materials"] = materials
+
+        try:
+            response = await self.http.post(url, params=params, json=body)
+            logger.info(
+                "Classroom announcement POST sent: course_id=%s materials_count=%s",
+                course_id,
+                len(materials or []),
+            )
+            _check_error(response)
+            return ResultRequest(
+                status=response.status_code,
+                body=response.json()
+            )
+        except httpx.TimeoutException as error:
+            raise ExternalServiceUnavailableError from error
+
+    async def upload_to_drive(
+            self,
+            telegram_id: int,
+            file_name: str,
+            content: bytes,
+            mime_type: str,
+            parent_folder_id: str | None = None,
+    ) -> dict:
+
+        url = f"{settings.CPP_SERVER_URL}/api/drive/upload"
+
+        params = {"telegram_id": telegram_id}
+
+        boundary = "foo_bar_baz_boundary"
+
+        metadata = {"name": file_name}
+        if parent_folder_id:
+            metadata["parents"] = [parent_folder_id]
+
+        metadata_json = json.dumps(metadata)
+
+        body_bytes = (
+                         f"--{boundary}\r\n"
+                         f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+                         f"{metadata_json}\r\n"
+                         f"--{boundary}\r\n"
+                         f"Content-Type: {mime_type}\r\n\r\n"
+                     ).encode("utf-8") + content + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        headers = {
+            "Content-Type": f"multipart/related; boundary={boundary}"
+        }
+
+        try:
+            response = await self.http.post(
+                url,
+                params=params,
+                content=body_bytes,
+                headers=headers
+            )
+            _check_error(response)
+            return response.json()
+        except httpx.TimeoutException as error:
+            raise ExternalServiceUnavailableError from error
 
     @staticmethod
     def _parse_list(
-        response: httpx.Response,
-        model,
-        resource: str,
-        payload_key: str,
+            response: httpx.Response,
+            model,
+            resource: str,
+            payload_key: str,
     ):
         try:
             body = response.json()

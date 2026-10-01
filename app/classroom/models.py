@@ -3,16 +3,23 @@ from typing import Any
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
+
+
 class ClassroomModel(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
         populate_by_name=True,
     )
 
+class TeacherFolder(ClassroomModel):
+    id: str
+    name: str | None = None
 
 class Course(ClassroomModel):
     id: str
     name: str
+    course_state: str | None = Field(default=None, validation_alias="courseState")
+    teacher_folder: TeacherFolder | None = Field(default=None, alias="teacherFolder")
 
 
 class CourseWork(ClassroomModel):

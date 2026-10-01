@@ -1,10 +1,13 @@
 from typing import Sequence, Any
+from dataclasses import asdict
+
 import openai
 from openai import AsyncOpenAI
 
 from app.core.types import LLMClient
 from app.core.errors import LLMServiceError
 from app.agent.models import Message, LLMResponse, ToolCallInfo
+from app.core.logging import logger
 
 
 class OpenAIAdapter(LLMClient):
@@ -17,6 +20,12 @@ class OpenAIAdapter(LLMClient):
             messages: Sequence[Message],
             tools: list[dict[str, Any]] | None = None
     ) -> LLMResponse:
+        logger.info(
+            "LLM complete called: model=%s messages=%s tools=%s",
+            self._model,
+            [asdict(message) for message in messages],
+            tools,
+        )
 
         ai_messages = []
         for msg in messages:
@@ -44,9 +53,19 @@ class OpenAIAdapter(LLMClient):
         try:
             response = await self._client.chat.completions.create(**kwargs)
         except openai.OpenAIError as error:
+            logger.exception("LLM request failed: model=%s", self._model)
             raise LLMServiceError(f"LLM API request failed: {error}") from error
 
         choice = response.choices[0].message
+        logger.info(
+            "LLM response received: model=%s text=%r tool_calls=%s",
+            self._model,
+            choice.content,
+            [
+                {"id": call.id, "name": call.function.name, "arguments": call.function.arguments}
+                for call in (choice.tool_calls or [])
+            ],
+        )
 
         parsed_tool_calls = []
         if choice.tool_calls:

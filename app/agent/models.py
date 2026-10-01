@@ -4,10 +4,19 @@ from typing import Callable, Any, Awaitable
 
 
 @dataclass
+class TelegramAttachment:
+    file_id: str
+    file_name: str | None = None
+    mime_type: str | None = None
+    size: int | None = None
+    kind: str = "document"
+
+@dataclass
 class ToolContext:
     chat_id: int
     user_id: int
     call_id: str
+    attachments: list[TelegramAttachment] = field(default_factory=list)
 
 @dataclass
 class ToolResult:

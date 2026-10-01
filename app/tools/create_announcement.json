@@ -2,23 +2,40 @@
   "type": "function",
   "function": {
     "name": "create_announcement",
-    "description": "Posts an announcement to the Google Classroom course stream. Students will receive an email notification about it. Call this when the instructor wants to make an announcement, alert the class, or post news.",
+    "description": "Publishes or drafts an announcement in the Google Classroom stream, optionally attaching web links or Google Drive files. If course_id is unknown, call get_courses first.",
     "parameters": {
       "type": "object",
       "properties": {
         "course_id": {
           "type": "string",
-          "description": "Course identifier."
+          "description": "Unique Google Classroom course ID."
         },
         "text": {
           "type": "string",
-          "description": "Ad text."
+          "description": "Announcement text/message."
+        },
+        "links": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 20,
+          "items": { "type": "string", "format": "uri" },
+          "description": "List of web URLs to attach to this announcement (e.g. ['https://github.com/...'])."
+        },
+        "drive_file_ids": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 20,
+          "items": { "type": "string" },
+          "description": "List of Google Drive file IDs to attach."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["PUBLISHED", "DRAFT"],
+          "description": "Publication state. Defaults to PUBLISHED."
         }
       },
-      "required": [
-        "course_id",
-        "text"
-      ]
+      "required": ["course_id", "text"],
+      "additionalProperties": false
     }
   }
 }
