@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_announcements",
+    "description": "Retrieves the list of announcements published or drafted in the stream of a specified Google Classroom course. Returns announcement IDs, texts, materials (links, files), and publication dates. Never invent course_id; invoke get_courses first if the ID is unknown.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID (e.g. '698843320833')."
+        }
+      },
+      "required": ["course_id"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -28,7 +28,10 @@ class AgentService:
             text,
             attachments or [],
         )
-        await self._history.append(chat_id, Message("user", text))
+        await self._history.append(
+            chat_id,
+            Message("user", content=text, attachments=attachments or []),
+        )
 
         for iteration in range(self._max_iterations):
             logger.info("Agent iteration started: chat_id=%s iteration=%s", chat_id, iteration + 1)

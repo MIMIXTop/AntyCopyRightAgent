@@ -1,3 +1,5 @@
+import io
+
 from aiogram import Router, Bot, F
 from aiogram.filters import Command
 from aiogram.types import Message as TgMessage
@@ -10,7 +12,7 @@ from app.telegram.keyboards import get_auth_keyboard
 from app.core.logging import logger
 
 
-def create_router(agent: AgentService, error_presenter) -> Router:
+def create_router(agent: AgentService, bot: Bot,  error_presenter) -> Router:
     router = Router()
 
     @router.message(Command("auth"))
@@ -21,6 +23,7 @@ def create_router(agent: AgentService, error_presenter) -> Router:
             "Нажмите кнопку ниже, разрешите доступ в Google, после чего возвращайтесь в чат.",
             reply_markup=get_auth_keyboard(message.from_user.id)
         )
+
 
     @router.message(F.document)
     async def handle_document_message(message: TgMessage):
@@ -86,18 +89,26 @@ def create_router(agent: AgentService, error_presenter) -> Router:
             return
 
         photo = message.photo[-1]
+
+        file_io = io.BytesIO()
+        await bot.download(photo, file_io)
+        photo_bytes = file_io.getvalue()
+
+        attachment = TelegramAttachment(
+            file_id=photo.file_id,
+            file_name=f"photo_{photo.file_unique_id}.jpg",
+            mime_type="image/jpeg",
+            size=photo.file_size or len(photo_bytes),
+            kind="photo",
+            data=photo_bytes,
+        )
+
         try:
             answer = await agent.handle(
                 chat_id=message.chat.id,
                 user_id=message.from_user.id,
                 text=message.caption or "Пользователь отправил фотографию.",
-                attachments=[
-                    TelegramAttachment(
-                        file_id=photo.file_id,
-                        size=photo.file_size,
-                        kind="photo",
-                    )
-                ],
+                attachments=[attachment],
             )
         except ApplicationError as error:
             await error_presenter.send_error(message.chat.id, error)

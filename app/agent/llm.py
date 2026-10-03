@@ -1,3 +1,4 @@
+import base64
 from typing import Sequence, Any
 from dataclasses import asdict
 
@@ -29,7 +30,32 @@ class OpenAIAdapter(LLMClient):
 
         ai_messages = []
         for msg in messages:
-            ai_msg = {"role": msg.role, "content": msg.content or ""}
+            attachments = msg.attachments or []
+
+            photo_attachments = [
+                att for att in attachments
+                if att.kind == "photo" and att.data
+            ]
+
+            if photo_attachments:
+                content_parts: list[dict[str, Any]] = []
+                if msg.content:
+                    content_parts.append({"type": "text", "text": str(msg.content)})
+
+                for photo in photo_attachments:
+                    b64_img = base64.b64encode(photo.data).decode("utf-8")
+                    mime = photo.mime_type or "image/jpeg"
+                    content_parts.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime};base64,{b64_img}"
+                        }
+                    })
+                ai_content = content_parts
+            else:
+                ai_content = msg.content or ""
+
+            ai_msg: dict[str, Any] = {"role": msg.role, "content": ai_content}
             if msg.tool_call_id:
                 ai_msg["tool_call_id"] = msg.tool_call_id
             if msg.tool_calls:
@@ -41,6 +67,23 @@ class OpenAIAdapter(LLMClient):
                     } for tc in msg.tool_calls
                 ]
             ai_messages.append(ai_msg)
+
+        debug_messages = []
+        for m in ai_messages:
+            if isinstance(m["content"], list):
+                debug_messages.append({
+                    "role": m["role"],
+                    "content": f"[Multimodal content: {len(m['content'])} parts]"
+                })
+            else:
+                debug_messages.append(m)
+
+        logger.info(
+            "LLM complete called: model=%s messages_count=%d tools_count=%d",
+            self._model,
+            len(ai_messages),
+            len(tools or []),
+        )
 
         kwargs = {
             "model": self._model,

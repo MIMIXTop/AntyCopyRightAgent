@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import httpx
+
 from app.classroom.client import ClassroomClient
 from app.core.errors import ValidationError
 from app.core.logging import logger
@@ -244,6 +246,168 @@ class ClassroomService:
         )
         return result
 
+    async def attach_web_image_as_drive_file(
+            self,
+            telegram_id: int,
+            course_id: str,
+            image_url: str,
+            image_name: str
+    ):
+        self._validate_telegram_id(telegram_id)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(image_url, follow_redirects=True)
+            response.raise_for_status()
+            image_bytes = response.read()
+
+        course = await self.client.get_concrete_course(telegram_id, course_id)
+        folder_id = course.teacher_folder.id if course.teacher_folder else None
+
+        drive_file = await self.client.upload_to_drive(
+            telegram_id=telegram_id,
+            file_name=image_name,
+            content=image_bytes,
+            mime_type="image/jpeg",
+            parent_folder_id=folder_id
+        )
+
+        return {
+            "driveFile": {
+                "driveFile": {
+                    "id": drive_file["id"],
+                    "title": "Изображение для показа"
+                },
+                "shareMode": "VIEW"
+            }
+        }
+
+    async def update_course(
+            self,
+            telegram_id: int,
+            course_id: str,
+            name: str | None = None,
+            description: str | None = None,
+            section: str | None = None,
+            course_state: str | None = None,
+    ):
+        logger.info(
+            "ClassroomService.update_course called: telegram_id=%s course_id=%s name=%r",
+            telegram_id,
+            course_id,
+            name,
+        )
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+
+        if name is not None and len(name) > 750:
+            raise ValidationError("Course name is too long")
+        if description is not None and len(description) > 30_000:
+            raise ValidationError("Course description is too long")
+        if course_state is not None and course_state not in {"ACTIVE", "ARCHIVED"}:
+            raise ValidationError("course_state must be ACTIVE or ARCHIVED")
+
+        return await self.client.patch_course(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            course_name=name,
+            course_description=description,
+            course_section=section,
+        )
+
+    async def update_announcement(
+            self,
+            telegram_id: int,
+            course_id: str,
+            announcement_id: str,
+            text: str | None = None,
+            state: str | None = None,
+    ):
+        logger.info(
+            "ClassroomService.update_announcement called: telegram_id=%s course_id=%s announcement_id=%s",
+            telegram_id,
+            course_id,
+            announcement_id,
+        )
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(announcement_id, str) or not announcement_id.strip():
+            raise ValidationError("Announcement ID is required")
+
+        if text is not None:
+            if not text.strip():
+                raise ValidationError("Text cannot be empty")
+            if len(text) > 30_000:
+                raise ValidationError("Text is too long")
+
+        if state is not None and state not in {"PUBLISHED", "DRAFT"}:
+            raise ValidationError("State must be PUBLISHED or DRAFT")
+
+        return await self.client.patch_announcement(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            announcement_id=announcement_id,
+            text=text,
+            state=state,
+        )
+
+    async def update_assignment(
+            self,
+            telegram_id: int,
+            course_id: str,
+            assignment_id: str,
+            title: str | None = None,
+            description: str | None = None,
+            max_points: int | None = None,
+            due_date: str | None = None,
+            due_time: str | None = None,
+            state: str | None = None,
+    ):
+        logger.info(
+            "ClassroomService.update_assignment called: telegram_id=%s course_id=%s assignment_id=%s",
+            telegram_id,
+            course_id,
+            assignment_id,
+        )
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(assignment_id, str) or not assignment_id.strip():
+            raise ValidationError("Assignment ID is required")
+
+        if title is not None:
+            if not title.strip():
+                raise ValidationError("Title cannot be empty")
+            if len(title) > 750:
+                raise ValidationError("Title is too long")
+
+        if max_points is not None and max_points < 0:
+            raise ValidationError("max_points must be greater than or equal to 0")
+
+        if state is not None and state not in {"PUBLISHED", "DRAFT"}:
+            raise ValidationError("State must be PUBLISHED or DRAFT")
+
+        return await self.client.patch_assignments(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            course_work_id=assignment_id,
+            title=title,
+            description=description,
+            max_points=max_points,
+            due_date=due_date,
+            due_time=due_time,
+            state=state,
+        )
+
+    async def get_announcements(self, telegram_id: int, course_id: str):
+        logger.info("ClassroomService.get_announcements called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+
+        announcements = await self.client.get_announcements(telegram_id, course_id)
+        return announcements
 
     @staticmethod
     def _validate_telegram_id(telegram_id: int) -> None:
