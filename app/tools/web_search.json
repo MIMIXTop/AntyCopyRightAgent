@@ -1,0 +1,22 @@
+{
+  "type": "function",
+  "function": {
+    "name": "web_search",
+    "description": "Searches the live internet for up-to-date information, documentation, articles, or URLs. Call this tool when the user asks to find external learning materials, library docs (e.g. C++ references, GitHub repos), or facts not present in your context.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Specific search query (e.g. 'cppreference std::expected tutorial', 'boost beast websocket examples github')."
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Number of search results to return. Default is 3, max is 5."
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+  }
+}

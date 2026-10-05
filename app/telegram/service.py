@@ -3,7 +3,15 @@ import io
 from aiogram import Bot
 
 from app.core.errors import ApplicationError
-from app.telegram.keyboards import get_course_confirm_keyboard, get_course_announcement_keyboard, get_course_work_keyboard
+from app.telegram.keyboards import (
+    get_course_confirm_keyboard,
+    get_course_announcement_keyboard,
+    get_course_work_keyboard,
+    get_update_course_keyboard,
+    get_update_announcement_keyboard,
+    get_update_work_keyboard,
+    get_invite_url_keyboard
+)
 from app.core.logging import logger
 
 class TelegramService:
@@ -78,4 +86,35 @@ class TelegramService:
             text=msg_text,
             reply_markup=get_course_work_keyboard(pending_id=pending_id),
             parse_mode="HTML",
+        )
+
+    async def request_course_update(self, chat_id: int, pending_id: str, course_name: str, changes: dict):
+        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Изменить курс «{course_name}»?\n\n{details}",
+            reply_markup=get_update_course_keyboard(pending_id),
+        )
+
+    async def request_announcement_update(self, chat_id: int, pending_id: str, changes: dict):
+        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Изменить анонс?\n\n{details}",
+            reply_markup=get_update_announcement_keyboard(pending_id),
+        )
+
+    async def request_assignment_update(self, chat_id: int, pending_id: str, changes: dict):
+        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Изменить задание?\n\n{details}",
+            reply_markup=get_update_work_keyboard(pending_id),
+        )
+
+    async def request_invite_link(self, chat_id: int, text: str, url: str):
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_invite_url_keyboard(url=url)
         )

@@ -1,0 +1,33 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_announcement",
+    "description": "Modifies an existing announcement in a Google Classroom course stream (e.g. edit announcement text or publish a draft). Only provide fields that are being changed. Never invent announcement_id; call get_announcements first to find the target announcement.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "The unique course identifier where the announcement is posted."
+        },
+        "announcement_id": {
+          "type": "string",
+          "description": "The unique identifier of the announcement to update. Must be obtained from get_announcements."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30000,
+          "description": "New/revised announcement text."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["PUBLISHED", "DRAFT"],
+          "description": "Updated publication state. Use 'PUBLISHED' to post a draft announcement to the class stream."
+        }
+      },
+      "required": ["course_id", "announcement_id"],
+      "additionalProperties": false
+    }
+  }
+}

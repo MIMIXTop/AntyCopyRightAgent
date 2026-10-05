@@ -7,6 +7,7 @@ from anyio import run
 from app.agent.models import TelegramAttachment, ToolContext
 from app.agent.tools import ToolRegistry
 from app.classroom.models import ResultRequest
+from app.classroom.models import Course
 from app.classroom.service import ClassroomService
 from app.core.errors import ToolArgumentsError
 from app.registers import telegram
@@ -47,9 +48,19 @@ class FakeTelegramService(TelegramService):
             bot=FakeBot()
         )
         self.announcement_confirmation = None
+        self.update_confirmation = None
 
     async def request_course_announcement(self, **kwargs):
         self.announcement_confirmation = kwargs
+
+    async def request_course_update(self, **kwargs):
+        self.update_confirmation = kwargs
+
+    async def request_announcement_update(self, **kwargs):
+        self.update_confirmation = kwargs
+
+    async def request_assignment_update(self, **kwargs):
+        self.update_confirmation = kwargs
 
 
 class FakeBot:
@@ -60,6 +71,17 @@ class FakeBot:
 class FakeAnnouncementService(FakeClassroomService):
     async def get_concrete_course(self, telegram_id, course_id):
         return type("Course", (), {"name": "Test course"})()
+
+    async def get_structure(self, telegram_id):
+        return [
+            Course.model_validate(
+                {
+                    "id": "course-1",
+                    "name": "Test course",
+                    "creationTime": "2026-10-03T16:00:00Z",
+                }
+            )
+        ]
 
 
 @pytest.mark.asyncio
@@ -147,3 +169,41 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
     ]
     assert pending["telegram_attachments"][0].file_id == "tg-file"
     assert telegram.announcement_confirmation["course_name"] == "Test course"
+
+
+@pytest.mark.asyncio
+async def test_get_courses_serializes_datetime_fields():
+    service = FakeAnnouncementService()
+    registry = ToolRegistry()
+    register_classroom_tools(registry, service, telegram=FakeTelegramService())
+
+    result = await registry.call(
+        "get_courses",
+        ToolContext(chat_id=1, user_id=42, call_id="call-3"),
+        {},
+    )
+
+    payload = json.loads(result.content)
+    assert payload["courses"][0]["creation_time"] == "2026-10-03T16:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_update_course_uses_confirmation_keyboard_flow():
+    service = FakeAnnouncementService()
+    telegram = FakeTelegramService()
+    registry = ToolRegistry()
+    register_classroom_tools(registry, service, telegram=telegram)
+
+    result = await registry.call(
+        "update_course",
+        ToolContext(chat_id=1, user_id=42, call_id="call-4"),
+        {"course_id": "course-1", "name": "Renamed"},
+    )
+
+    payload = json.loads(result.content)
+    assert result.terminal is True
+    assert payload["status"] == "paused"
+    assert telegram.update_confirmation["course_name"] == "Test course"
+    pending = service.get_pending_update(payload["pending_id"])
+    assert pending["resource"] == "course"
+    assert pending["name"] == "Renamed"

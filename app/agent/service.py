@@ -14,6 +14,11 @@ class AgentService:
         self._tools = tools
         self._max_iterations = max_iterations
 
+    async def handel_voice(self, voice: bytes):
+        res = await self._llm.transcription_voice(voice_bytes=voice)
+        return res
+
+
     async def handle(
         self,
         chat_id: int,
@@ -28,7 +33,10 @@ class AgentService:
             text,
             attachments or [],
         )
-        await self._history.append(chat_id, Message("user", text))
+        await self._history.append(
+            chat_id,
+            Message("user", content=text, attachments=attachments or []),
+        )
 
         for iteration in range(self._max_iterations):
             logger.info("Agent iteration started: chat_id=%s iteration=%s", chat_id, iteration + 1)

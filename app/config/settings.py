@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     HTTP_TIMEOUT_SECONDS: float = 15.0
     LLM_BASE_URL: str
+    VOICE_BASE_URL: str
+    VOICE_TOKEN: SecretStr
+    VOICE_LLM_MODEL: str
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
@@ -27,6 +30,10 @@ class Settings(BaseSettings):
     @property
     def openai_api_key(self) -> str:
         return self.OPEN_AI_KEY.get_secret_value().strip()
+
+    @property
+    def voice_api_key(self) -> str:
+        return self.VOICE_TOKEN.get_secret_value().strip()
 
 
 settings = Settings()

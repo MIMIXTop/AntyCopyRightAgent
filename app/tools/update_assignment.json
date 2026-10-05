@@ -1,0 +1,48 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_assignment",
+    "description": "Updates an existing coursework/assignment in Google Classroom (e.g. extend deadline, change points, edit title or instructions). Pass only the parameters being changed. Never invent assignment_id; call get_assignments first to locate the specific assignment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "The unique course identifier."
+        },
+        "assignment_id": {
+          "type": "string",
+          "description": "The unique assignment (courseWork) identifier obtained from get_assignments."
+        },
+        "title": {
+          "type": "string",
+          "description": "New title for the assignment. Provide only if renaming."
+        },
+        "description": {
+          "type": "string",
+          "description": "New or revised task description and requirements."
+        },
+        "max_points": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Updated maximum points. Must be an integer greater than or equal to 0."
+        },
+        "due_date": {
+          "type": "string",
+          "description": "New deadline date formatted strictly as 'YYYY-MM-DD'. If the user gives a relative date ('до пятницы', 'на неделю позже'), resolve the exact date using get_current_time."
+        },
+        "due_time": {
+          "type": "string",
+          "description": "New deadline time in 24-hour format 'HH:MM' (e.g. '23:59' or '18:00')."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["PUBLISHED", "DRAFT"],
+          "description": "Updated assignment state. Use 'PUBLISHED' to publish an assignment currently in draft."
+        }
+      },
+      "required": ["course_id", "assignment_id"],
+      "additionalProperties": false
+    }
+  }
+}

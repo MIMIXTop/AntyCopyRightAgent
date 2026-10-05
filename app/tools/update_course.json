@@ -1,0 +1,39 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_course",
+    "description": "Updates one or more fields of an existing Google Classroom course (e.g. rename course, change section/group, update description, or archive course). Pass only the fields that need to be modified. If course_id is unknown, invoke get_courses first.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "The unique identifier of the course to update. Never guess or invent an ID."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 750,
+          "description": "New course title. Provide only if the teacher wants to rename the course."
+        },
+        "section": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "New section or group label (e.g. 'Group 22-IT-2')."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 30000,
+          "description": "Updated course description or syllabus summary."
+        },
+        "course_state": {
+          "type": "string",
+          "enum": ["ACTIVE", "ARCHIVED"],
+          "description": "New state of the course. Use 'ARCHIVED' if the teacher asks to archive/close the course."
+        }
+      },
+      "required": ["course_id"],
+      "additionalProperties": false
+    }
+  }
+}

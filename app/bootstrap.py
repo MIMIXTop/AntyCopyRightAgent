@@ -12,14 +12,17 @@ from app.telegram.service import TelegramService
 from app.tools.loader import load_schema
 from app.classroom.client import ClassroomClient
 from app.classroom.service import ClassroomService
+from app.handlers.web_search import WebSearchService
 from app.registers.classroom import register_classroom_tools
 from app.registers.telegram import register_telegram_tools
+from app.registers.web_search import register_web_search
 from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
 from app.core.logging import configure_logging
 from app.telegram.handlers import create_router
 from app.telegram.callbacks import create_callback_router
 from app.core.logging import logger
+from app.agent.voice_service import VoiceService
 
 
 @dataclass
@@ -35,9 +38,9 @@ class Application:
         await self.bot.session.close()
 
 
-
 async def build_application(settings: Settings) -> Application:
-    logger.info("Application bootstrap started: cpp_server=%s llm_model=%s", settings.CPP_SERVER_URL, settings.LLM_MODEL)
+    logger.info("Application bootstrap started: cpp_server=%s llm_model=%s", settings.CPP_SERVER_URL,
+                settings.LLM_MODEL)
     configure_logging()
     http_client = httpx.AsyncClient(
         base_url=settings.CPP_SERVER_URL.rstrip("/"),
@@ -49,11 +52,15 @@ async def build_application(settings: Settings) -> Application:
     )
     bot = Bot(token=settings.bot_token_clean)
 
+    web_service = WebSearchService(10)
+
+    voice_service = VoiceService()
     classroom = ClassroomService(ClassroomClient(http_client))
     telegram = TelegramService(bot)
     registry = ToolRegistry()
     register_classroom_tools(registry, classroom, telegram)
-    register_telegram_tools(registry ,telegram)
+    register_telegram_tools(registry, telegram)
+    register_web_search(registry, web_service)
 
     async def current_time(context: ToolContext, arguments: dict):
         from app.handlers.get_current_time import get_current_time
@@ -77,16 +84,16 @@ async def build_application(settings: Settings) -> Application:
     registry.register("finish", finish, load_schema("finish"))
 
     storage = InMemoryHistoryStore(
-            system_message=Message("system", load_system_prompt()),
+        system_message=Message("system", load_system_prompt()),
     )
 
     agent = AgentService(
         llm=OpenAIAdapter(llm_client, settings.LLM_MODEL),
-        history= storage,
+        history=storage,
         tools=registry,
     )
     dispatcher = Dispatcher()
-    dispatcher.include_router(create_router(agent, telegram))
+    dispatcher.include_router(create_router(agent, bot, voice_service,telegram))
     dispatcher.include_router(
         create_callback_router(
             classroom=classroom,

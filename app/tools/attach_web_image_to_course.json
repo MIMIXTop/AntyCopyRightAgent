@@ -1,0 +1,26 @@
+{
+  "type": "function",
+  "function": {
+    "name": "attach_web_image_to_course",
+    "description": "Downloads an image from a public web URL, uploads it to the designated course folder on Google Drive, and returns the uploaded Google Drive file ID. Use this tool BEFORE creating an announcement or assignment when the teacher wants an internet image to appear as a native Classroom 'Display Image' (hero banner) instead of a simple web link. The returned drive_file_id can then be passed to create_announcement or create_assignment.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID where the image should be stored. Never invent it; resolve with get_courses first."
+        },
+        "image_url": {
+          "type": "string",
+          "description": "Direct HTTP(S) link to the web image found via search_images or provided by user."
+        },
+        "file_name": {
+          "type": "string",
+          "description": "Optional file name for Google Drive (e.g. 'crow_reference.jpg'). Defaults to 'illustration.jpg'."
+        }
+      },
+      "required": ["course_id", "image_url"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "type": "function",
+  "function": {
+    "name": "search_images",
+    "description": "Searches the web for photos, images, diagrams, GIFs, and visual illustrations. Call this tool when the user needs visual examples, illustrations for course materials or announcements, diagrams, or references.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Image search query (e.g. 'crow bird photo', 'sorting algorithm visualization diagram', 'ancient rome forum illustration')."
+        },
+        "max_results": {
+          "type": "integer",
+          "description": "Number of images to return. Default is 3."
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+  }
+}

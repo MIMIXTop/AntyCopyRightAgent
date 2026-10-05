@@ -1,13 +1,14 @@
 import httpx
 import logging
 import json
-
-from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement
 from app.core.errors import (
     ExternalServiceUnavailableError,
     InvalidUpstreamResponseError,
     UpstreamServiceError, ForbiddenError, UnauthorizedError,
-    safe_error_detail
+    safe_error_detail, ValidationError
 )
 from app.config.settings import settings
 
@@ -80,7 +81,11 @@ class ClassroomClient:
         _check_error(res)
         return self._parse_list(res, Course, "courses", "courses")
 
-    async def get_course_works(self, telegram_id: int, course_id: int) -> list[CourseWork]:
+    async def get_course_works(
+            self,
+            telegram_id: int,
+            course_id: int
+    ) -> list[CourseWork]:
         logger.info("ClassroomClient.get_course_works called: telegram_id=%s course_id=%s", telegram_id, course_id)
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork"
         params = {"telegram_id": telegram_id}
@@ -93,7 +98,12 @@ class ClassroomClient:
         _check_error(res)
         return self._parse_list(res, CourseWork, "course works", "courseWork")
 
-    async def get_submissions(self, telegram_id: int, course_id: int, course_work_id: int) -> list[StudentSubmission]:
+    async def get_submissions(
+            self,
+            telegram_id: int,
+            course_id: int,
+            course_work_id: int
+    ) -> list[StudentSubmission]:
         logger.info(
             "ClassroomClient.get_submissions called: telegram_id=%s course_id=%s course_work_id=%s",
             telegram_id,
@@ -111,7 +121,11 @@ class ClassroomClient:
         _check_error(res)
         return self._parse_list(res, StudentSubmission, "submissions", "studentSubmissions")
 
-    async def get_student_in_course(self, telegram_id: int, course_id: int) -> list[Student]:
+    async def get_student_in_course(
+            self,
+            telegram_id: int,
+            course_id: int
+    ) -> list[Student]:
         logger.info("ClassroomClient.get_student_in_course called: telegram_id=%s course_id=%s", telegram_id, course_id)
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/students"
         params = {"telegram_id": telegram_id}
@@ -124,8 +138,13 @@ class ClassroomClient:
         _check_error(res)
         return self._parse_list(res, Student, "students", "students")
 
-    async def create_course(self, telegram_id: int, course_name: str, course_description: str = "",
-                            course_section: str | None = None) -> ResultRequest:
+    async def create_course(
+            self,
+            telegram_id: int,
+            course_name: str,
+            course_description: str = "",
+            course_section: str | None = None
+    ) -> ResultRequest:
         logger.info(
             "ClassroomClient.create_course called: telegram_id=%s course_name=%r course_description=%r course_section=%r",
             telegram_id,
@@ -214,19 +233,23 @@ class ClassroomClient:
         if max_points is not None:
             body["maxPoints"] = max_points
 
-        if due_date:
+        if due_date is not None and due_date.strip():
             try:
-                y, m, d = map(int, due_date.split("-"))
-                body["dueDate"] = {"year": y, "month": m, "day": d}
+                time_str = due_time if (due_time and due_time.strip()) else "23:59"
 
-                if due_time:
-                    h, minute = map(int, due_time.split(":"))
-                    body["dueTime"] = {"hours": h, "minutes": minute}
-                else:
-                    body["dueTime"] = {"hours": 23, "minutes": 59}
+                dt_str = f"{due_date} {time_str}"
+                local_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+
+                local_tz = ZoneInfo("Europe/Moscow")
+                local_dt = local_dt.replace(tzinfo=local_tz)
+
+                utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+
+                body["dueDate"] = {"year": utc_dt.year, "month": utc_dt.month, "day": utc_dt.day}
+                body["dueTime"] = {"hours": utc_dt.hour, "minutes": utc_dt.minute}
+
             except ValueError:
-                logger.warning("Не удалось распарсить due_date: %s", due_date)
-
+                raise ValidationError("Неверный формат даты или времени (ожидается YYYY-MM-DD и HH:MM)")
         if materials:
             body["materials"] = materials
 
@@ -240,8 +263,13 @@ class ClassroomClient:
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 
-    async def create_announcement(self, telegram_id: int, course_id: str, text: str, state: str | None = None,
-                                  materials: list[dict] | None = None) -> ResultRequest:
+    async def create_announcement(
+            self,
+            telegram_id: int,
+            course_id: str,
+            text: str, state: str | None = None,
+            materials: list[dict] | None = None
+    ) -> ResultRequest:
         logger.info(
             "ClassroomClient.create_announcement called: telegram_id=%s course_id=%s state=%s materials_count=%s",
             telegram_id,
@@ -277,6 +305,171 @@ class ClassroomClient:
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 
+    async def patch_course(
+            self,
+            telegram_id: int,
+            course_id: str,
+            course_name: str | None = None,
+            course_description: str | None = None,
+            course_section: str | None = None,
+            course_state: str | None = None,
+    ) -> Course:
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}"
+        body = {}
+        mask_fields = []
+
+        if course_name is not None and course_name.strip():
+            mask_fields.append("name")
+            body["name"] = course_name
+
+        if course_description is not None:
+            mask_fields.append("description")
+            body["description"] = course_description
+
+        if course_section is not None:
+            mask_fields.append("section")
+            body["section"] = course_section
+
+        if course_state is not None:
+            mask_fields.append("courseState")
+            body["courseState"] = course_state
+
+        if not body:
+            raise ValidationError("Не указано ни одного поля для обновления курса")
+
+        params = {
+            "telegram_id": telegram_id,
+            "updateMask": ",".join(mask_fields)
+        }
+
+        try:
+            response = await self.http.patch(url, params=params, json=body)
+            _check_error(response)
+            return Course.model_validate(response.json())
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def patch_announcement(
+            self,
+            telegram_id: int,
+            course_id: str,
+            announcement_id: str,
+            text: str | None = None,
+            state: str | None = None,
+    ) -> Announcement:
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/announcements/{announcement_id}"
+        body = {}
+        mask_fields = []
+
+        if text is not None and text.strip():
+            mask_fields.append("text")
+            body["text"] = text
+
+        if state is not None and state.strip():
+            mask_fields.append("state")
+            body["state"] = state
+
+        if not body:
+            raise ValidationError("Не указано ни одного поля для обновления анонса")
+
+        params = {
+            "telegram_id": telegram_id,
+            "updateMask": ",".join(mask_fields)
+        }
+
+        try:
+            response = await self.http.patch(url, params=params, json=body)
+            _check_error(response)
+            return Announcement.model_validate(response.json())
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def patch_assignments(
+            self,
+            telegram_id: int,
+            course_id: str,
+            course_work_id: str,
+            title: str | None = None,
+            description: str | None = None,
+            max_points: int | None = None,
+            due_date: str | None = None,
+            due_time: str | None = None,
+            state: str | None = None,
+    ) -> CourseWork:
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork/{course_work_id}"
+        body = {}
+        mask_fields = []
+
+        if title is not None and title.strip():
+            mask_fields.append("title")
+            body["title"] = title
+
+        if description is not None:
+            mask_fields.append("description")
+            body["description"] = description
+
+        if max_points is not None:
+            mask_fields.append("maxPoints")
+            body["maxPoints"] = max_points
+
+        if due_date is not None and due_date.strip():
+            try:
+                time_str = due_time if (due_time and due_time.strip()) else "23:59"
+
+                dt_str = f"{due_date} {time_str}"
+                local_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+
+                local_tz = ZoneInfo("Europe/Minsk")
+                local_dt = local_dt.replace(tzinfo=local_tz)
+
+                utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+
+                if 'mask_fields' in locals():
+                    mask_fields.append("dueDate")
+                    mask_fields.append("dueTime")
+
+                body["dueDate"] = {"year": utc_dt.year, "month": utc_dt.month, "day": utc_dt.day}
+                body["dueTime"] = {"hours": utc_dt.hour, "minutes": utc_dt.minute}
+
+            except ValueError:
+                raise ValidationError("Неверный формат даты или времени (ожидается YYYY-MM-DD и HH:MM)")
+        if state is not None and state.strip():
+            mask_fields.append("state")
+            body["state"] = state
+
+        if not body:
+            raise ValidationError("Не указано ни одного поля для обновления задания")
+
+        params = {
+            "telegram_id": telegram_id,
+            "updateMask": ",".join(mask_fields)
+        }
+
+        try:
+            response = await self.http.patch(url, params=params, json=body)
+            _check_error(response)
+            return CourseWork.model_validate(response.json())
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+
+    async def get_announcements(self, telegram_id: int, course_id: str) -> list[Announcement]:
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/announcements"
+        params = {"telegram_id": telegram_id}
+
+        try:
+            res = await self.http.get(url, params=params)
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+        _check_error(res)
+        return self._parse_list(res, Announcement, "announcements", "announcements")
+
+
     async def upload_to_drive(
             self,
             telegram_id: int,
@@ -292,7 +485,10 @@ class ClassroomClient:
 
         boundary = "foo_bar_baz_boundary"
 
-        metadata = {"name": file_name}
+        metadata = {
+            "name": file_name,
+            "mimeType": mime_type,
+        }
         if parent_folder_id:
             metadata["parents"] = [parent_folder_id]
 
@@ -318,7 +514,10 @@ class ClassroomClient:
                 headers=headers
             )
             _check_error(response)
-            return response.json()
+            result = response.json()
+            if not isinstance(result, dict) or not isinstance(result.get("id"), str):
+                raise InvalidUpstreamResponseError("Drive")
+            return result
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 

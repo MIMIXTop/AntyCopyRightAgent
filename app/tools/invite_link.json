@@ -1,0 +1,23 @@
+{
+  "type": "function",
+  "function": {
+    "name": "invite_link",
+    "description": "Sends a message with an interactive inline button containing an invite/join URL to a Google Classroom course. Call this tool when the teacher or student asks for a course join link, wants to share an enrollment URL, or needs to provide a clickable button to connect to a class.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The direct HTTP(S) link for joining or opening the course (e.g., Google Classroom alternateLink or enrollment link)."
+        },
+        "text": {
+          "type": "string",
+          "description": "The accompanying text/message explaining what the link is for (e.g., 'Перейдите по кнопке ниже, чтобы подключиться к курсу')."
+        }
+      },
+      "required": ["url", "text"],
+      "additionalProperties": false
+    }
+  }
+}
