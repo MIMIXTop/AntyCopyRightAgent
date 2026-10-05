@@ -434,6 +434,33 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             terminal=True,
         )
 
+    async def invite_link_tool(context: ToolContext, args: dict) -> ToolResult:
+        url = args.get("url")
+        text = args.get("text")
+
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+            raise ToolArgumentsError("invite_link", "url must be a valid HTTP(S) URL")
+
+        if not isinstance(text, str) or not text.strip():
+            raise ToolArgumentsError("invite_link", "text must be a non-empty string")
+
+        await telegram.request_invite_link(
+            chat_id=context.chat_id,
+            url=url,
+            text=text,
+        )
+
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps({"status": "delivered", "reason": "invite_link_sent"}),
+            terminal=False,
+        )
+
+    registry.register(
+        "invite_link",
+        invite_link_tool,
+        load_schema("invite_link")
+    )
     registry.register(
         "update_course",
         update_course_tool,

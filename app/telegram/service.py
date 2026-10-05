@@ -10,6 +10,7 @@ from app.telegram.keyboards import (
     get_update_course_keyboard,
     get_update_announcement_keyboard,
     get_update_work_keyboard,
+    get_invite_url_keyboard
 )
 from app.core.logging import logger
 
@@ -109,4 +110,11 @@ class TelegramService:
             chat_id=chat_id,
             text=f"Изменить задание?\n\n{details}",
             reply_markup=get_update_work_keyboard(pending_id),
+        )
+
+    async def request_invite_link(self, chat_id: int, text: str, url: str):
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_invite_url_keyboard(url=url)
         )

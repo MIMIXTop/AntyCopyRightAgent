@@ -129,6 +129,7 @@ Before calling any tool, ensure all arguments are verified and strictly match ex
 - `update_course(course_id, name, description, section, course_state)`: Update metadata of an existing course (rename, change description, or archive). Provide only the fields being changed. If course_id is unknown, invoke get_courses first.
 - `update_announcement(course_id, announcement_id, text, state)`: Edit text or change state of an existing announcement. Never guess announcement_id; call get_announcements first.
 - `update_assignment(course_id, assignment_id, title, description, max_points, due_date, due_time, state)`: Modify an existing coursework/assignment (e.g. extend deadline, adjust points, update instructions). Never guess assignment_id; call get_assignments first.
+- `invite_link(url, text)`: Send a message accompanied by an inline button leading to an invite or course enrollment link. Use this whenever the user requests a link/button to join a course.
 
 - *Note on Identifiers:* Pass `course_id` and `assignment_id` exactly as returned by their respective tools. Do not replace identifiers with names or titles. All IDs in the current schema are strictly strings.
 

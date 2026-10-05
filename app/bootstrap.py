@@ -22,6 +22,7 @@ from app.core.logging import configure_logging
 from app.telegram.handlers import create_router
 from app.telegram.callbacks import create_callback_router
 from app.core.logging import logger
+from app.agent.voice_service import VoiceService
 
 
 @dataclass
@@ -53,6 +54,7 @@ async def build_application(settings: Settings) -> Application:
 
     web_service = WebSearchService(10)
 
+    voice_service = VoiceService()
     classroom = ClassroomService(ClassroomClient(http_client))
     telegram = TelegramService(bot)
     registry = ToolRegistry()
@@ -91,7 +93,7 @@ async def build_application(settings: Settings) -> Application:
         tools=registry,
     )
     dispatcher = Dispatcher()
-    dispatcher.include_router(create_router(agent, telegram))
+    dispatcher.include_router(create_router(agent, bot, voice_service,telegram))
     dispatcher.include_router(
         create_callback_router(
             classroom=classroom,

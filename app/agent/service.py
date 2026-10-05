@@ -14,6 +14,11 @@ class AgentService:
         self._tools = tools
         self._max_iterations = max_iterations
 
+    async def handel_voice(self, voice: bytes):
+        res = await self._llm.transcription_voice(voice_bytes=voice)
+        return res
+
+
     async def handle(
         self,
         chat_id: int,

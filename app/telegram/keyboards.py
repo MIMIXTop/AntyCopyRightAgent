@@ -93,3 +93,13 @@ def get_update_work_keyboard(pending_id: str) -> InlineKeyboardMarkup:
             )
         ]]
     )
+
+def get_invite_url_keyboard(url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подключится к классу",
+                url=url
+            )
+        ]]
+    )

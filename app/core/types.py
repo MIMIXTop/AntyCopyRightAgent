@@ -9,6 +9,9 @@ class LLMClient(Protocol):
                        tools: list[dict[str, Any]] | None = None) -> LLMResponse:
         ...
 
+    async def transcription_voice(self, voice_bytes: bytes):
+        ...
+
 
 class HistoryStore(Protocol):
     async def get(self, chat_id: int) -> list[Any]:

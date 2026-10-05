@@ -16,6 +16,15 @@ class OpenAIAdapter(LLMClient):
         self._client = client
         self._model = model
 
+    async def transcription_voice(self, voice_bytes: bytes):
+
+        res = await self._client.audio.transcriptions.create(
+            file=("voice.ogg", voice_bytes, "audio/ogg"),
+            model=self._model,
+            languages=["en", "ru"],
+        )
+        return res
+
     async def complete(
             self,
             messages: Sequence[Message],
