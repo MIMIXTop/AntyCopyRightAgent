@@ -76,11 +76,11 @@ class Course(ClassroomModel):
     description_heading: str | None = Field(default=None, alias="descriptionHeading")
     description: str | None = None
     room: str | None = None
-    owner_id: str = Field(alias="ownerId")
+    owner_id: str | None = Field(default=None, alias="ownerId")
     creation_time: datetime | None = Field(default=None, alias="creationTime")
     update_time: datetime | None = Field(default=None, alias="updateTime")
     enrollment_code: str | None = Field(default=None, alias="enrollmentCode")
-    course_state: str = Field(alias="courseState")  # ACTIVE, PROVISIONED, ARCHIVED, DECLINED
+    course_state: str | None = Field(default=None, alias="courseState")  # ACTIVE, PROVISIONED, ARCHIVED, DECLINED
     alternate_link: str | None = Field(default=None, alias="alternateLink")
     teacher_folder: DriveFolder | None = Field(default=None, alias="teacherFolder")
 
@@ -116,6 +116,10 @@ class CourseWork(ClassroomModel):
     work_type: str = Field(default="ASSIGNMENT", alias="workType")
     creator_user_id: str | None = Field(default=None, alias="creatorUserId")
     assignment: AssignmentFolder | None = None
+
+    @property
+    def name(self) -> str:
+        return self.title
 
     @property
     def deadline_display(self) -> str | None:

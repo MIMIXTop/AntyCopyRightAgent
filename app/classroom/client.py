@@ -1,7 +1,8 @@
 import httpx
 import logging
 import json
-
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement
 from app.core.errors import (
     ExternalServiceUnavailableError,
@@ -232,19 +233,23 @@ class ClassroomClient:
         if max_points is not None:
             body["maxPoints"] = max_points
 
-        if due_date:
+        if due_date is not None and due_date.strip():
             try:
-                y, m, d = map(int, due_date.split("-"))
-                body["dueDate"] = {"year": y, "month": m, "day": d}
+                time_str = due_time if (due_time and due_time.strip()) else "23:59"
 
-                if due_time:
-                    h, minute = map(int, due_time.split(":"))
-                    body["dueTime"] = {"hours": h, "minutes": minute}
-                else:
-                    body["dueTime"] = {"hours": 23, "minutes": 59}
+                dt_str = f"{due_date} {time_str}"
+                local_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+
+                local_tz = ZoneInfo("Europe/Moscow")
+                local_dt = local_dt.replace(tzinfo=local_tz)
+
+                utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+
+                body["dueDate"] = {"year": utc_dt.year, "month": utc_dt.month, "day": utc_dt.day}
+                body["dueTime"] = {"hours": utc_dt.hour, "minutes": utc_dt.minute}
+
             except ValueError:
-                logger.warning("Не удалось распарсить due_date: %s", due_date)
-
+                raise ValidationError("Неверный формат даты или времени (ожидается YYYY-MM-DD и HH:MM)")
         if materials:
             body["materials"] = materials
 
@@ -307,6 +312,7 @@ class ClassroomClient:
             course_name: str | None = None,
             course_description: str | None = None,
             course_section: str | None = None,
+            course_state: str | None = None,
     ) -> Course:
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}"
         body = {}
@@ -323,6 +329,10 @@ class ClassroomClient:
         if course_section is not None:
             mask_fields.append("section")
             body["section"] = course_section
+
+        if course_state is not None:
+            mask_fields.append("courseState")
+            body["courseState"] = course_state
 
         if not body:
             raise ValidationError("Не указано ни одного поля для обновления курса")
@@ -406,17 +416,25 @@ class ClassroomClient:
 
         if due_date is not None and due_date.strip():
             try:
-                y, m, d = map(int, due_date.split("-"))
-                mask_fields.append("dueDate")
-                body["dueDate"] = {"year": y, "month": m, "day": d}
+                time_str = due_time if (due_time and due_time.strip()) else "23:59"
 
-                if due_time is not None and due_time.strip():
-                    h, minute = map(int, due_time.split(":"))
+                dt_str = f"{due_date} {time_str}"
+                local_dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+
+                local_tz = ZoneInfo("Europe/Minsk")
+                local_dt = local_dt.replace(tzinfo=local_tz)
+
+                utc_dt = local_dt.astimezone(ZoneInfo("UTC"))
+
+                if 'mask_fields' in locals():
+                    mask_fields.append("dueDate")
                     mask_fields.append("dueTime")
-                    body["dueTime"] = {"hours": h, "minutes": minute}
+
+                body["dueDate"] = {"year": utc_dt.year, "month": utc_dt.month, "day": utc_dt.day}
+                body["dueTime"] = {"hours": utc_dt.hour, "minutes": utc_dt.minute}
+
             except ValueError:
                 raise ValidationError("Неверный формат даты или времени (ожидается YYYY-MM-DD и HH:MM)")
-
         if state is not None and state.strip():
             mask_fields.append("state")
             body["state"] = state
@@ -496,7 +514,10 @@ class ClassroomClient:
                 headers=headers
             )
             _check_error(response)
-            return response.json()
+            result = response.json()
+            if not isinstance(result, dict) or not isinstance(result.get("id"), str):
+                raise InvalidUpstreamResponseError("Drive")
+            return result
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
 

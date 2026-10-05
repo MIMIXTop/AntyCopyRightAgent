@@ -91,7 +91,7 @@ async def build_application(settings: Settings) -> Application:
         tools=registry,
     )
     dispatcher = Dispatcher()
-    dispatcher.include_router(create_router(agent, bot, telegram))
+    dispatcher.include_router(create_router(agent, telegram))
     dispatcher.include_router(
         create_callback_router(
             classroom=classroom,

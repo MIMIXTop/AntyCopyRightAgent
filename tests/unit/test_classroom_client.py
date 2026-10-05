@@ -6,8 +6,10 @@ import httpx
 from app.classroom.client import ClassroomClient
 from app.core.errors import (
     ExternalServiceUnavailableError,
+    ForbiddenError,
     InvalidUpstreamResponseError,
     UnauthorizedError,
+    UpstreamServiceError,
 )
 
 
@@ -104,3 +106,59 @@ async def test_client_rejects_upload_response_without_file_id():
             content=b"notes",
             mime_type="text/plain",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status, error_type", [
+    (403, ForbiddenError),
+    (422, UpstreamServiceError),
+    (500, UpstreamServiceError),
+])
+async def test_client_maps_upstream_errors(status, error_type):
+    def mock_handler(request: httpx.Request):
+        return httpx.Response(status, json={"error": {"message": "failed"}})
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    client = ClassroomClient(mock_http)
+
+    with pytest.raises(error_type) as error:
+        await client.get_course(42)
+
+    if status >= 400 and status != 403:
+        assert error.value.status_code == status
+
+
+@pytest.mark.asyncio
+async def test_client_handles_non_json_upload_response():
+    def mock_handler(request: httpx.Request):
+        return httpx.Response(200, text="not-json")
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    client = ClassroomClient(mock_http)
+
+    with pytest.raises((InvalidUpstreamResponseError, ValueError)):
+        await client.upload_to_drive(42, "a.txt", b"a", "text/plain")
+
+
+@pytest.mark.asyncio
+async def test_client_patch_course_sends_course_state():
+    requests = []
+
+    def mock_handler(request: httpx.Request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"id": "course-1", "name": "Course", "courseState": "ARCHIVED"},
+        )
+
+    client = ClassroomClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    )
+    await client.patch_course(
+        telegram_id=42,
+        course_id="course-1",
+        course_state="ARCHIVED",
+    )
+
+    assert requests[0].url.params["updateMask"] == "courseState"
+    assert json.loads(requests[0].content) == {"courseState": "ARCHIVED"}

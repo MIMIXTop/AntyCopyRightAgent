@@ -14,6 +14,7 @@ class ClassroomService:
         self._pending_courses = {}
         self._pending_announcements = {}
         self._pending_course_works = {}
+        self._pending_updates = {}
         logger.info("ClassroomService initialized")
 
     def hold_course_work(
@@ -49,6 +50,21 @@ class ClassroomService:
 
     def remove_pending_assignment(self, pending_id: str) -> None:
         return self._pending_course_works.pop(pending_id, None)
+
+    def hold_update(self, resource: str, telegram_id: int, **data) -> str:
+        pending_id = str(uuid.uuid4())[:8]
+        self._pending_updates[pending_id] = {
+            "resource": resource,
+            "telegram_id": telegram_id,
+            **data,
+        }
+        return pending_id
+
+    def get_pending_update(self, pending_id: str) -> dict | None:
+        return self._pending_updates.get(pending_id)
+
+    def remove_pending_update(self, pending_id: str) -> None:
+        self._pending_updates.pop(pending_id, None)
 
     def hold_course_announcement(
         self,
@@ -312,6 +328,7 @@ class ClassroomService:
             course_name=name,
             course_description=description,
             course_section=section,
+            course_state=course_state,
         )
 
     async def update_announcement(

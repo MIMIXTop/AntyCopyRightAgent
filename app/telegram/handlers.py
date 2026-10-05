@@ -1,6 +1,4 @@
-import io
-
-from aiogram import Router, Bot, F
+from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message as TgMessage
 
@@ -12,7 +10,7 @@ from app.telegram.keyboards import get_auth_keyboard
 from app.core.logging import logger
 
 
-def create_router(agent: AgentService, bot: Bot,  error_presenter) -> Router:
+def create_router(agent: AgentService, error_presenter) -> Router:
     router = Router()
 
     @router.message(Command("auth"))
@@ -90,17 +88,12 @@ def create_router(agent: AgentService, bot: Bot,  error_presenter) -> Router:
 
         photo = message.photo[-1]
 
-        file_io = io.BytesIO()
-        await bot.download(photo, file_io)
-        photo_bytes = file_io.getvalue()
-
         attachment = TelegramAttachment(
             file_id=photo.file_id,
             file_name=f"photo_{photo.file_unique_id}.jpg",
             mime_type="image/jpeg",
-            size=photo.file_size or len(photo_bytes),
+            size=photo.file_size,
             kind="photo",
-            data=photo_bytes,
         )
 
         try:

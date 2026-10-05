@@ -9,6 +9,10 @@ from app.tools.loader import load_schema
 from app.core.logging import logger
 
 
+def _json_model(model) -> dict:
+    return model.model_dump(mode="json")
+
+
 def register_classroom_tools(registry, classroom: ClassroomService, telegram: TelegramService) -> None:
     logger.info("Registering Classroom tools")
     async def get_students(context: ToolContext, args: dict):
@@ -30,7 +34,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"students": [item.model_dump() for item in students]},
+                {"students": [_json_model(item) for item in students]},
                 ensure_ascii=False
             )
         )
@@ -48,7 +52,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"courses": [item.model_dump() for item in courses]},
+                {"courses": [_json_model(item) for item in courses]},
             )
         )
 
@@ -60,7 +64,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"course_works": [item.model_dump() for item in course_works]},
+                {"course_works": [_json_model(item) for item in course_works]},
             )
         )
 
@@ -74,7 +78,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"student_submissions": [item.model_dump() for item in student_submissions]},
+                {"student_submissions": [_json_model(item) for item in student_submissions]},
             )
         )
 
@@ -300,7 +304,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"announcements": [item.model_dump() for item in announcements]},
+                {"announcements": [_json_model(item) for item in announcements]},
                 ensure_ascii=False,
                 default=str,
             ),
@@ -320,8 +324,9 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         if all(v is None for v in (name, description, section, course_state)):
             raise ToolArgumentsError("update_course", "At least one field to update must be provided")
 
-        updated_course = await classroom.update_course(
-            telegram_id=telegram_id,
+        pending_id = classroom.hold_update(
+            "course",
+            telegram_id,
             course_id=course_id,
             name=name,
             description=description,
@@ -329,14 +334,22 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             course_state=course_state,
         )
 
+        course = await classroom.get_concrete_course(telegram_id, course_id)
+        await telegram.request_course_update(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            course_name=course.name,
+            changes={
+                "name": name,
+                "description": description,
+                "section": section,
+                "course_state": course_state,
+            },
+        )
         return ToolResult(
             call_id=context.call_id,
-            content=json.dumps(
-                {"status": "success", "course": updated_course.model_dump()},
-                ensure_ascii=False,
-                default=str,
-            ),
-            terminal=False,
+            content=json.dumps({"status": "paused", "reason": "waiting_for_user_confirmation", "pending_id": pending_id}),
+            terminal=True,
         )
 
     async def update_announcement_tool(context: ToolContext, args: dict) -> ToolResult:
@@ -355,22 +368,24 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         if text is None and state is None:
             raise ToolArgumentsError("update_announcement", "Either 'text' or 'state' must be provided for update")
 
-        updated_announcement = await classroom.update_announcement(
-            telegram_id=telegram_id,
+        pending_id = classroom.hold_update(
+            "announcement",
+            telegram_id,
             course_id=course_id,
             announcement_id=announcement_id,
             text=text,
             state=state,
         )
 
+        await telegram.request_announcement_update(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            changes={"text": text, "state": state},
+        )
         return ToolResult(
             call_id=context.call_id,
-            content=json.dumps(
-                {"status": "success", "announcement": updated_announcement.model_dump()},
-                ensure_ascii=False,
-                default=str,
-            ),
-            terminal=False,
+            content=json.dumps({"status": "paused", "reason": "waiting_for_user_confirmation", "pending_id": pending_id}),
+            terminal=True,
         )
 
     async def update_assignment_tool(context: ToolContext, args: dict) -> ToolResult:
@@ -392,8 +407,9 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         if all(v is None for v in (title, description, max_points, due_date, due_time, state)):
             raise ToolArgumentsError("update_assignment", "At least one field to update must be provided")
 
-        updated_assignment = await classroom.update_assignment(
-            telegram_id=telegram_id,
+        pending_id = classroom.hold_update(
+            "assignment",
+            telegram_id,
             course_id=course_id,
             assignment_id=assignment_id,
             title=title,
@@ -404,14 +420,18 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             state=state,
         )
 
+        await telegram.request_assignment_update(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            changes={
+                "title": title, "description": description, "max_points": max_points,
+                "due_date": due_date, "due_time": due_time, "state": state,
+            },
+        )
         return ToolResult(
             call_id=context.call_id,
-            content=json.dumps(
-                {"status": "success", "assignment": updated_assignment.model_dump()},
-                ensure_ascii=False,
-                default=str,
-            ),
-            terminal=False,
+            content=json.dumps({"status": "paused", "reason": "waiting_for_user_confirmation", "pending_id": pending_id}),
+            terminal=True,
         )
 
     registry.register(

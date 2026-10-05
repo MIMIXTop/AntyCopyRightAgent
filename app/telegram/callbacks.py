@@ -216,4 +216,96 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
         classroom.remove_pending_assignment(pending_id)
         await call.answer()
 
+    async def apply_update(call: CallbackQuery, pending_id: str, resource: str):
+        data = classroom.get_pending_update(pending_id)
+        if not data or data["resource"] != resource or data["telegram_id"] != call.from_user.id:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+
+        await call.answer()
+        try:
+            if resource == "course":
+                await classroom.update_course(
+                    telegram_id=data["telegram_id"],
+                    course_id=data["course_id"],
+                    name=data["name"],
+                    description=data["description"],
+                    section=data["section"],
+                    course_state=data["course_state"],
+                )
+                message = "✅ Курс успешно изменён."
+            elif resource == "announcement":
+                await classroom.update_announcement(
+                    telegram_id=data["telegram_id"],
+                    course_id=data["course_id"],
+                    announcement_id=data["announcement_id"],
+                    text=data["text"],
+                    state=data["state"],
+                )
+                message = "✅ Анонс успешно изменён."
+            else:
+                await classroom.update_assignment(
+                    telegram_id=data["telegram_id"],
+                    course_id=data["course_id"],
+                    assignment_id=data["assignment_id"],
+                    title=data["title"],
+                    description=data["description"],
+                    max_points=data["max_points"],
+                    due_date=data["due_date"],
+                    due_time=data["due_time"],
+                    state=data["state"],
+                )
+                message = "✅ Задание успешно изменено."
+
+            await call.message.edit_text(message)
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", message),
+            )
+        except ApplicationError as error:
+            await call.message.edit_text("❌ Не удалось изменить объект.")
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", f"Изменение не выполнено: {error}"),
+            )
+        finally:
+            classroom.remove_pending_update(pending_id)
+
+    async def cancel_update(call: CallbackQuery, pending_id: str, resource: str):
+        data = classroom.get_pending_update(pending_id)
+        if not data or data["resource"] != resource or data["telegram_id"] != call.from_user.id:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+        await call.answer()
+        await call.message.edit_text("❌ Изменение отменено.")
+        await history_store.append(
+            call.message.chat.id,
+            Message("system", "Пользователь отменил изменение."),
+        )
+        classroom.remove_pending_update(pending_id)
+
+    @router.callback_query(F.data.startswith("course:update:confirm:"))
+    async def confirm_course_update(call: CallbackQuery):
+        await apply_update(call, call.data.split(":")[-1], "course")
+
+    @router.callback_query(F.data.startswith("course:update:cancel:"))
+    async def cancel_course_update(call: CallbackQuery):
+        await cancel_update(call, call.data.split(":")[-1], "course")
+
+    @router.callback_query(F.data.startswith("announcement:update:confirm:"))
+    async def confirm_announcement_update(call: CallbackQuery):
+        await apply_update(call, call.data.split(":")[-1], "announcement")
+
+    @router.callback_query(F.data.startswith("announcement:update:cancel:"))
+    async def cancel_announcement_update(call: CallbackQuery):
+        await cancel_update(call, call.data.split(":")[-1], "announcement")
+
+    @router.callback_query(F.data.startswith("course:work:update:confirm:"))
+    async def confirm_assignment_update(call: CallbackQuery):
+        await apply_update(call, call.data.split(":")[-1], "assignment")
+
+    @router.callback_query(F.data.startswith("course:work:update:cancel:"))
+    async def cancel_assignment_update(call: CallbackQuery):
+        await cancel_update(call, call.data.split(":")[-1], "assignment")
+
     return router
