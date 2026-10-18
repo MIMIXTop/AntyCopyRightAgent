@@ -3,15 +3,7 @@ import io
 from aiogram import Bot
 
 from app.core.errors import ApplicationError
-from app.telegram.keyboards import (
-    get_course_confirm_keyboard,
-    get_course_announcement_keyboard,
-    get_course_work_keyboard,
-    get_update_course_keyboard,
-    get_update_announcement_keyboard,
-    get_update_work_keyboard,
-    get_invite_url_keyboard
-)
+from app.telegram.keyboards import *
 from app.core.logging import logger
 
 class TelegramService:
@@ -118,3 +110,20 @@ class TelegramService:
             text=text,
             reply_markup=get_invite_url_keyboard(url=url)
         )
+
+    async def request_course_topic_create(self, chat_id: int, pending_id: str,topic_name: str):
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Вы уверены, что хотите создать раздел **'{topic_name}'**?",
+            reply_markup=get_create_course_topic_keyboard(pending_id=pending_id)
+        )
+
+    async def request_course_topic_update(self, chat_id: int, pending_id: str, changes: dict):
+        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Изменить раздел?\n\n{details}",
+            reply_markup=get_update_course_topic_keyboard(pending_id=pending_id),
+        )
+

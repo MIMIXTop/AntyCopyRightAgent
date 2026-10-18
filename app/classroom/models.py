@@ -171,3 +171,10 @@ class CreatedCourse(BaseModel):
     name: str
     description: str | None = None
     section: str | None = None
+
+
+class CourseTopic(ClassroomModel):
+    name: str
+    topic_id: str = Field(validation_alias="topicId")
+    course_id: str = Field(validation_alias="courseId")
+    update_time: datetime | None = Field(default=None, alias="updateTime")

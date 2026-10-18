@@ -14,6 +14,8 @@ class ClassroomService:
         self._pending_courses = {}
         self._pending_announcements = {}
         self._pending_course_works = {}
+        self._pending_topics = {}
+        self._pending_materials = {}
         self._pending_updates = {}
         logger.info("ClassroomService initialized")
 
@@ -44,12 +46,31 @@ class ClassroomService:
 
         return pending_id
 
+    def hold_course_topic(
+            self,
+            telegram_id: int,
+            course_id: str,
+            topic_name: str
+    ):
+        pending_id = str(uuid.uuid4())[:8]
+        self._pending_topics[pending_id] = {
+            "telegram_id": telegram_id,
+            "course_id": course_id,
+            "topic_name": topic_name
+        }
+        return pending_id
+
     def get_pending_assignment(self, pending_id: str) -> dict | None:
         return self._pending_course_works.get(pending_id, None)
 
-
     def remove_pending_assignment(self, pending_id: str) -> None:
         return self._pending_course_works.pop(pending_id, None)
+
+    def get_pending_topic(self, pending_id: str) -> dict | None:
+        return self._pending_topics.get(pending_id)
+
+    def remove_pending_topic(self, pending_id: str) -> None:
+        return self._pending_topics.pop(pending_id, None)
 
     def hold_update(self, resource: str, telegram_id: int, **data) -> str:
         pending_id = str(uuid.uuid4())[:8]
@@ -425,6 +446,56 @@ class ClassroomService:
 
         announcements = await self.client.get_announcements(telegram_id, course_id)
         return announcements
+
+    async def get_topics(self, telegram_id: int, course_id: str):
+        logger.info("ClassroomService.get_topics called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+
+        topics = await self.client.get_topics_in_course(telegram_id, course_id)
+        return topics
+
+    async def create_topic(self, telegram_id: int, course_id: str, topic_name: str):
+        logger.info("ClassroomService.create_topic called: telegram_id=%s course_id=%s topic_name=%s", telegram_id, course_id, topic_name)
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ValidationError("Topic Name is required")
+        if len(topic_name) > 750:
+            raise ValidationError("Topic Name is too long")
+
+        result = await self.client.create_topic_in_course(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            topic_name=topic_name,
+        )
+
+        return result
+
+    async def update_topic(self, telegram_id: int, course_id: str, topic_name: str, topic_id: str):
+        logger.info("ClassroomService.update_topic called: telegram_id=%s course_id=%s topic_name=%s topic_id=%s", telegram_id, course_id, topic_name, topic_id)
+
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ValidationError("Topic Name is required")
+        if len(topic_name) > 750:
+            raise ValidationError("Topic Name is too long")
+        if not isinstance(topic_id, str) or not topic_id.strip():
+            raise ValidationError("Topic ID is required")
+        result = await self.client.update_topic_in_course(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            topic_name=topic_name,
+            topic_id=topic_id,
+        )
+        return result
+
 
     @staticmethod
     def _validate_telegram_id(telegram_id: int) -> None:

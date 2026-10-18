@@ -1,0 +1,25 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_topic",
+    "description": "Creates a new topic (section) in a Google Classroom course after user confirmation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique Google Classroom course ID. Never invent an ID."
+        },
+        "topic_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 750,
+          "description": "Name of the new topic."
+        }
+      },
+      "required": ["course_id", "topic_name"],
+      "additionalProperties": false
+    }
+  }
+}

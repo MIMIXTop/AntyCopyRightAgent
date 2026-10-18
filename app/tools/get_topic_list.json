@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_topic_list",
+    "description": "Retrieves the list of topics in a specified Google Classroom course. Never invent course_id; invoke get_courses first if the ID is unknown.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique Google Classroom course ID."
+        }
+      },
+      "required": ["course_id"],
+      "additionalProperties": false
+    }
+  }
+}

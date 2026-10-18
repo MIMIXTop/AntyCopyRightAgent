@@ -3,7 +3,8 @@ import logging
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement
+from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement, \
+    CourseTopic
 from app.core.errors import (
     ExternalServiceUnavailableError,
     InvalidUpstreamResponseError,
@@ -385,6 +386,62 @@ class ClassroomClient:
         except httpx.RequestError as error:
             logger.error("Failed to connect to C++ server: %s", error)
             raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def get_topics_in_course(self, telegram_id: int, course_id: str):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/topics"
+        params = {
+            "telegram_id": telegram_id
+        }
+
+        try:
+            res = await self.http.get(url, params=params)
+            _check_error(res)
+            return self._parse_list(res, CourseTopic, "topic", "topics")
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def create_topic_in_course(self, telegram_id: int, topic_name: str, course_id: str):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/topics"
+        params = {
+            "telegram_id": telegram_id
+        }
+        body = {
+            "name": topic_name
+        }
+        try:
+            response = await self.http.post(url, params=params, json=body)
+            _check_error(response)
+            return ResultRequest(
+                status=response.status_code,
+                body=response.json()
+            )
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def update_topic_in_course(self, telegram_id: int, topic_name: str, topic_id: str, course_id: str):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/topics/{topic_id}"
+        params = {
+            "telegram_id": telegram_id,
+            "updateMask": "name"
+        }
+
+        body = {
+            "name": topic_name
+        }
+
+        try:
+            response = await self.http.patch(url, params=params, json=body)
+            _check_error(response)
+            return ResultRequest(
+                status=response.status_code,
+                body=response.json()
+            )
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
 
     async def patch_assignments(
             self,

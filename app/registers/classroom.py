@@ -456,6 +456,106 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             terminal=False,
         )
 
+    async def get_course_topics(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("get_topic_list", "course_id is required and must be a non-empty string")
+
+        topics = await classroom.get_topics(telegram_id, course_id)
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps(
+                {"topics": [_json_model(topic) for topic in topics]},
+                ensure_ascii=False,
+            ),
+        )
+
+    async def create_topic_tool(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
+        topic_name = args.get("topic_name")
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("create_topic", "course_id is required and must be a non-empty string")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ToolArgumentsError("create_topic", "topic_name is required and must be a non-empty string")
+
+
+        pending_id = classroom.hold_course_topic(
+            telegram_id, course_id, topic_name
+        )
+
+        await telegram.request_course_topic_create(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            topic_name=topic_name,
+        )
+
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "pending_id": pending_id,
+            }),
+            terminal=True,
+        )
+
+    async def update_topic_tool(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
+        topic_name = args.get("topic_name")
+        topic_id = args.get("topic_id")
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("update_topic", "course_id is required and must be a non-empty string")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ToolArgumentsError("update_topic", "topic_name is required and must be a non-empty string")
+        if not isinstance(topic_id, str) or not topic_id.strip():
+            raise ToolArgumentsError("update_topic", "topic_id is required and must be a non-empty string")
+
+        pending_id = classroom.hold_update(
+            "topic",
+            telegram_id,
+            course_id=course_id,
+            topic_name=topic_name,
+            topic_id=topic_id,
+        )
+
+        await telegram.request_course_topic_update(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            changes={
+                "topic_name": topic_name,
+            }
+        )
+
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "pending_id": pending_id,
+            }),
+            terminal=True,
+        )
+
+
+    registry.register(
+        "get_topic_list",
+        get_course_topics,
+        load_schema("get_topic_list")
+    )
+    registry.register(
+        "update_topic",
+        update_topic_tool,
+        load_schema("update_topic")
+    )
+    registry.register(
+        "create_topic",
+        create_topic_tool,
+        load_schema("create_topic")
+    )
     registry.register(
         "invite_link",
         invite_link_tool,

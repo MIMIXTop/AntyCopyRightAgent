@@ -1,0 +1,30 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_topic",
+    "description": "Renames an existing Google Classroom topic after user confirmation.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique Google Classroom course ID."
+        },
+        "topic_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique ID of the topic to rename. Never invent an ID."
+        },
+        "topic_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 750,
+          "description": "New topic name."
+        }
+      },
+      "required": ["course_id", "topic_id", "topic_name"],
+      "additionalProperties": false
+    }
+  }
+}
