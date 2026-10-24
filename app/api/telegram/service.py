@@ -3,7 +3,7 @@ import io
 from aiogram import Bot
 
 from app.core.errors import ApplicationError
-from app.telegram.keyboards import *
+from app.api.telegram.keyboards import *
 from app.core.logging import logger
 
 class TelegramService:
@@ -14,7 +14,10 @@ class TelegramService:
 
     async def send_message(self, text: str, chat_id: int):
         logger.info("TelegramService.send_message called: chat_id=%s text=%r", chat_id, text)
-        await self._bot.send_message(chat_id=chat_id, text=text)
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=text,
+        )
 
     async def send_error(self, chat_id: int, error: ApplicationError):
         logger.error("TelegramService.send_error called: chat_id=%s error=%s", chat_id, error)
@@ -41,7 +44,7 @@ class TelegramService:
         )
         await self._bot.send_message(
             chat_id=chat_id,
-            text=f"Вы уверены, что хотите создать курс **'{course_name}'**?",
+            text=f"Вы уверены, что хотите создать курс *«{course_name}»*?",
             reply_markup=get_course_confirm_keyboard(pending_id=pending_id),
         )
 
@@ -54,7 +57,10 @@ class TelegramService:
         )
         await self._bot.send_message(
             chat_id=chat_id,
-            text=f"Вы уверены, что хотите в курс **'{course_name}'** добавить следующий анонс:\n\n {announcement_text}?",
+            text=(
+                f"Вы уверены, что хотите в курс *«{course_name}»* "
+                f"добавить следующий анонс:\n\n{announcement_text}?"
+            ),
             reply_markup=get_course_announcement_keyboard(pending_id=pending_id),
         )
 
@@ -66,10 +72,10 @@ class TelegramService:
             course_name: str,
             due_date: str | None = None,
     ):
-        deadline_text = f"\n⏰ Дедлайн: <b>{due_date}</b>" if due_date else ""
+        deadline_text = f"\n⏰ Дедлайн: *{due_date}*" if due_date else ""
         msg_text = (
-            f"📝 Создать задание в курсе <b>«{course_name}»</b>?\n\n"
-            f"Название: <b>{title}</b>"
+            f"📝 Создать задание в курсе *«{course_name}»*?\n\n"
+            f"Название: *{title}*"
             f"{deadline_text}"
         )
 
@@ -77,19 +83,24 @@ class TelegramService:
             chat_id=chat_id,
             text=msg_text,
             reply_markup=get_course_work_keyboard(pending_id=pending_id),
-            parse_mode="HTML",
         )
 
     async def request_course_update(self, chat_id: int, pending_id: str, course_name: str, changes: dict):
-        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        details = "\n".join(
+            f"• {key}: {value}"
+            for key, value in changes.items() if value is not None
+        )
         await self._bot.send_message(
             chat_id=chat_id,
-            text=f"Изменить курс «{course_name}»?\n\n{details}",
+            text=f"Изменить курс *«{course_name}»*?\n\n{details}",
             reply_markup=get_update_course_keyboard(pending_id),
         )
 
     async def request_announcement_update(self, chat_id: int, pending_id: str, changes: dict):
-        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        details = "\n".join(
+            f"• {key}: {value}"
+            for key, value in changes.items() if value is not None
+        )
         await self._bot.send_message(
             chat_id=chat_id,
             text=f"Изменить анонс?\n\n{details}",
@@ -97,7 +108,10 @@ class TelegramService:
         )
 
     async def request_assignment_update(self, chat_id: int, pending_id: str, changes: dict):
-        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        details = "\n".join(
+            f"• {key}: {value}"
+            for key, value in changes.items() if value is not None
+        )
         await self._bot.send_message(
             chat_id=chat_id,
             text=f"Изменить задание?\n\n{details}",
@@ -114,12 +128,15 @@ class TelegramService:
     async def request_course_topic_create(self, chat_id: int, pending_id: str,topic_name: str):
         await self._bot.send_message(
             chat_id=chat_id,
-            text=f"Вы уверены, что хотите создать раздел **'{topic_name}'**?",
+            text=f"Вы уверены, что хотите создать раздел *«{topic_name}»*?",
             reply_markup=get_create_course_topic_keyboard(pending_id=pending_id)
         )
 
     async def request_course_topic_update(self, chat_id: int, pending_id: str, changes: dict):
-        details = "\n".join(f"• {key}: {value}" for key, value in changes.items() if value is not None)
+        details = "\n".join(
+            f"• {key}: {value}"
+            for key, value in changes.items() if value is not None
+        )
 
         await self._bot.send_message(
             chat_id=chat_id,
@@ -127,3 +144,31 @@ class TelegramService:
             reply_markup=get_update_course_topic_keyboard(pending_id=pending_id),
         )
 
+    async def request_course_material_create(self, chat_id: int, pending_id: str, title: str, description: str, materials_payload: list | None = None):
+        details = (
+            f"Название: *{title}*\n"
+            f"Описание: {description}"
+        )
+        if materials_payload:
+            details += "\nМатериалы:\n" + "\n".join(
+                f"• {material.get('link', {}).get('url') or material.get('driveFile', {}).get('driveFile', {}).get('id', 'вложение')}"
+                for material in materials_payload
+            )
+
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Вы уверены, что хотите создать материал курса?\n\n{details}",
+            reply_markup=get_create_course_material_keyboard(pending_id=pending_id)
+        )
+
+    async def request_course_material_update(self, chat_id: int, pending_id: str, changes: dict):
+        details = "\n".join(
+            f"• {key}: {value}"
+            for key, value in changes.items() if value is not None
+        )
+
+        await self._bot.send_message(
+            chat_id=chat_id,
+            text=f"Изменить материал курса?\n\n{details}",
+            reply_markup=get_update_course_material_keyboard(pending_id=pending_id),
+        )

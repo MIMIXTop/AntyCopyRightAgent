@@ -11,7 +11,7 @@ from app.agent.voice_service import VoiceService
 # from app.classroom.service import ClassroomService
 from app.core.errors import ApplicationError
 from app.core.logging import logger
-from app.telegram.keyboards import get_auth_keyboard
+from app.api.telegram.keyboards import get_auth_keyboard
 
 
 def create_router(

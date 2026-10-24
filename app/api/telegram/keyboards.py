@@ -131,3 +131,31 @@ def get_update_course_topic_keyboard(pending_id: str) -> InlineKeyboardMarkup:
             )
         ]]
     )
+
+def get_create_course_material_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"course:material:create:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"course:material:create:cancel:{pending_id}",
+            )
+        ]]
+    )
+
+def get_update_course_material_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"course:material:update:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"course:material:update:cancel:{pending_id}",
+            )
+        ]]
+    )

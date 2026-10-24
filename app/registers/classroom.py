@@ -3,8 +3,8 @@ from urllib.parse import urlparse
 
 from app.core.errors import ToolArgumentsError
 from app.agent.models import ToolContext, ToolResult
-from app.classroom.service import ClassroomService
-from app.telegram.service import TelegramService
+from app.api.classroom.service import ClassroomService
+from app.api.telegram.service import TelegramService
 from app.tools.loader import load_schema
 from app.core.logging import logger
 
@@ -225,11 +225,14 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         due_time = args.get("due_time")
         links = args.get("links", [])
         telegram_file_ids = args.get("telegram_file_ids", [])
+        topic_id = args.get("topic_id")
 
         if not isinstance(course_id, str) or not course_id.strip():
             raise ToolArgumentsError("create_assignment", "course_id is required")
         if not isinstance(title, str) or not title.strip():
             raise ToolArgumentsError("create_assignment", "title is required")
+        if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
+            raise ToolArgumentsError("create_assignment", "topic_id must be a non-empty string")
 
         pending_id = classroom.hold_course_work(
             telegram_id=context.user_id,
@@ -240,7 +243,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             due_date=due_date,
             due_time=due_time,
             links=links,
-            telegram_file_ids=telegram_file_ids
+            telegram_file_ids=telegram_file_ids,
+            topic_id=topic_id,
         )
 
         course = await classroom.get_concrete_course(context.user_id, course_id)
@@ -398,14 +402,17 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         due_date = args.get("due_date")
         due_time = args.get("due_time")
         state = args.get("state")
+        topic_id = args.get("topic_id")
 
         if not isinstance(course_id, str) or not course_id.strip():
             raise ToolArgumentsError("update_assignment", "course_id is required and must be a non-empty string")
         if not isinstance(assignment_id, str) or not assignment_id.strip():
             raise ToolArgumentsError("update_assignment", "assignment_id is required and must be a non-empty string")
 
-        if all(v is None for v in (title, description, max_points, due_date, due_time, state)):
+        if all(v is None for v in (title, description, max_points, due_date, due_time, state, topic_id)):
             raise ToolArgumentsError("update_assignment", "At least one field to update must be provided")
+        if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
+            raise ToolArgumentsError("update_assignment", "topic_id must be a non-empty string")
 
         pending_id = classroom.hold_update(
             "assignment",
@@ -418,6 +425,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             due_date=due_date,
             due_time=due_time,
             state=state,
+            topic_id=topic_id,
         )
 
         await telegram.request_assignment_update(
@@ -426,6 +434,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             changes={
                 "title": title, "description": description, "max_points": max_points,
                 "due_date": due_date, "due_time": due_time, "state": state,
+                "topic_id": topic_id,
             },
         )
         return ToolResult(
@@ -540,7 +549,164 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             terminal=True,
         )
 
+    async def get_materials_list(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
 
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("get_materials_list", "course_id is required and must be a non-empty string")
+
+        materials = await classroom.get_course_materials_list(telegram_id, course_id)
+
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps(
+                {"materials": [_json_model(item) for item in materials]},
+                ensure_ascii=False
+            ),
+        )
+
+    async def create_material_tool(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
+        title = args.get("title")
+        description = args.get("description")
+        links = args.get("links", [])
+        drive_file_ids = args.get("drive_file_ids", [])
+        topic_id = args.get("topic_id")
+        telegram_attachments = context.attachments
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("create_material", "course_id is required and must be a non-empty string")
+        if not isinstance(title, str) or not title.strip():
+            raise ToolArgumentsError("create_material", "title is required and must be a non-empty string")
+        if not isinstance(links, list) or not all(isinstance(link, str) for link in links):
+            raise ToolArgumentsError("create_material", "links must be a list of strings")
+        if not isinstance(drive_file_ids, list) or not all(isinstance(file_id, str) for file_id in drive_file_ids):
+            raise ToolArgumentsError("create_material", "drive_file_ids must be a list of strings")
+        if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
+            raise ToolArgumentsError("create_material", "topic_id must be a non-empty string")
+
+        materials_payload = []
+
+        for link in links:
+            materials_payload.append({"link": {"url": link}})
+
+        for file_id in drive_file_ids:
+            if isinstance(file_id, str) and file_id.strip():
+                materials_payload.append({
+                    "driveFile": {
+                        "driveFile": {"id": file_id.strip()},
+                        "shareMode": "VIEW"
+                    }
+                })
+
+        pending_id = classroom.hold_course_material(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            title=title,
+            description=description,
+            materials=materials_payload if materials_payload else None,
+            topic_id=topic_id,
+            telegram_attachments=telegram_attachments
+        )
+
+        await telegram.request_course_material_create(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            title=title,
+            description=description,
+            materials_payload=materials_payload if materials_payload else None
+        )
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "pending_id": pending_id,
+            }),
+            terminal=True,
+        )
+
+    async def update_material_tool(context: ToolContext, args: dict) -> ToolResult:
+        telegram_id = context.user_id
+        course_id = args.get("course_id")
+        material_id = args.get("material_id")
+        title = args.get("title")
+        description = args.get("description")
+        topic_id = args.get("topic_id")
+        links = args.get("links")
+        drive_file_ids = args.get("drive_file_ids")
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ToolArgumentsError("update_material", "course_id is required and must be a non-empty string")
+        if not isinstance(material_id, str) or not material_id.strip():
+            raise ToolArgumentsError("update_material", "material_id is required and must be a non-empty string")
+        if all(value is None for value in (title, description, topic_id, links, drive_file_ids)):
+            raise ToolArgumentsError("update_material", "At least one field to update must be provided")
+        if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
+            raise ToolArgumentsError("update_material", "topic_id must be a non-empty string")
+
+        materials = None
+        if links is not None or drive_file_ids is not None:
+            links = links or []
+            drive_file_ids = drive_file_ids or []
+            if not isinstance(links, list) or not all(isinstance(link, str) for link in links):
+                raise ToolArgumentsError("update_material", "links must be a list of strings")
+            if not isinstance(drive_file_ids, list) or not all(isinstance(file_id, str) for file_id in drive_file_ids):
+                raise ToolArgumentsError("update_material", "drive_file_ids must be a list of strings")
+            materials = [{"link": {"url": link}} for link in links]
+            materials.extend(
+                {"driveFile": {"driveFile": {"id": file_id}, "shareMode": "VIEW"}}
+                for file_id in drive_file_ids
+            )
+
+        pending_id = classroom.hold_update(
+            "material",
+            telegram_id,
+            course_id=course_id,
+            material_id=material_id,
+            title=title,
+            description=description,
+            materials=materials,
+            topic_id=topic_id,
+        )
+
+        await telegram.request_course_material_update(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            changes={
+                "title": title,
+                "description": description,
+                "topic_id": topic_id,
+            }
+        )
+
+        return ToolResult(
+            call_id=context.call_id,
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "pending_id": pending_id,
+            }),
+            terminal=True,
+        )
+
+    registry.register(
+        "get_materials_list",
+        get_materials_list,
+        load_schema("get_materials_list")
+    )
+    registry.register(
+        "create_material",
+        create_material_tool,
+        load_schema("create_material")
+    )
+    registry.register(
+        "update_material",
+        update_material_tool,
+        load_schema("update_material")
+    )
     registry.register(
         "get_topic_list",
         get_course_topics,

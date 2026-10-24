@@ -39,6 +39,10 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "List of telegram_file_id from user's messages to upload and attach."
+        },
+        "topic_id": {
+          "type": "string",
+          "description": "Existing Google Classroom topic ID to place this assignment in. Obtain it from get_topic_list."
         }
       },
       "required": ["course_id", "title"],

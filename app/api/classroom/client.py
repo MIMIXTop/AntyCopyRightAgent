@@ -3,8 +3,8 @@ import logging
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement, \
-    CourseTopic
+from app.api.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement, \
+    CourseTopic, CourseMaterial
 from app.core.errors import (
     ExternalServiceUnavailableError,
     InvalidUpstreamResponseError,
@@ -202,8 +202,9 @@ class ClassroomClient:
                 status=res.status_code,
                 body=course_data
             )
-        except httpx.TimeoutException as error:
-            raise ExternalServiceUnavailableError from error
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server while creating course: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
 
 
     async def create_assigment(
@@ -216,6 +217,7 @@ class ClassroomClient:
             due_date: str | None = None,
             due_time: str | None = None,
             materials: list[dict] | None = None,
+            topic_id: str | None = None,
             state: str = "PUBLISHED"
     ) -> ResultRequest:
 
@@ -253,6 +255,8 @@ class ClassroomClient:
                 raise ValidationError("Неверный формат даты или времени (ожидается YYYY-MM-DD и HH:MM)")
         if materials:
             body["materials"] = materials
+        if topic_id:
+            body["topicId"] = topic_id
 
         try:
             response = await self.http.post(url, params=params, json=body)
@@ -454,6 +458,7 @@ class ClassroomClient:
             due_date: str | None = None,
             due_time: str | None = None,
             state: str | None = None,
+            topic_id: str | None = None,
     ) -> CourseWork:
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork/{course_work_id}"
         body = {}
@@ -495,6 +500,9 @@ class ClassroomClient:
         if state is not None and state.strip():
             mask_fields.append("state")
             body["state"] = state
+        if topic_id is not None and topic_id.strip():
+            mask_fields.append("topicId")
+            body["topicId"] = topic_id
 
         if not body:
             raise ValidationError("Не указано ни одного поля для обновления задания")
@@ -577,6 +585,86 @@ class ClassroomClient:
             return result
         except httpx.TimeoutException as error:
             raise ExternalServiceUnavailableError from error
+
+    async def get_course_materials(self, telegram_id: int, course_id):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWorkMaterials"
+        params = {"telegram_id": telegram_id}
+
+        try:
+            response = await self.http.get(url, params=params)
+            _check_error(response)
+            return self._parse_list(response, CourseMaterial, "courseMaterial", "courseMaterial")
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def create_course_material(self, telegram_id: int, course_id: str, materials: list[dict], title: str, description: str = None, topic_id: str = None):
+
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWorkMaterials"
+        params = {"telegram_id": telegram_id}
+        body = {
+            "materials": materials,
+            "title": title,
+        }
+
+        if description:
+            body["description"] = description
+        if topic_id:
+            body["topicId"] = topic_id
+
+        try:
+            response = await self.http.post(url, params=params, json=body)
+            _check_error(response)
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def update_course_material(
+            self,
+            telegram_id: int,
+            course_id: str,
+            material_id: str,
+            title: str | None = None,
+            materials: list[dict] | None = None,
+            description: str | None = None,
+            topic_id: str | None = None,
+    ):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWorkMaterials/{material_id}"
+        body = {}
+        mask_fields = []
+
+        if title is not None and title.strip():
+            mask_fields.append("title")
+            body["title"] = title
+
+        if description is not None and description.strip():
+            mask_fields.append("description")
+            body["description"] = description
+
+        if topic_id is not None and topic_id.strip():
+            mask_fields.append("topicId")
+            body["topicId"] = topic_id
+
+        if materials is not None:
+            mask_fields.append("materials")
+            body["materials"] = materials
+
+        if not body:
+            raise ValidationError("Не указано ни одного поля для обновления материала")
+
+        params = {
+            "telegram_id": telegram_id,
+            "updateMask": ",".join(mask_fields)
+        }
+
+        try:
+            response = await self.http.patch(url, params=params, json=body)
+            _check_error(response)
+            return CourseMaterial.model_validate(response.json())
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
 
     @staticmethod
     def _parse_list(

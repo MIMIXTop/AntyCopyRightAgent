@@ -1,18 +1,15 @@
 import json
 
-import httpx
 import pytest
-from anyio import run
 
 from app.agent.models import TelegramAttachment, ToolContext
 from app.agent.tools import ToolRegistry
-from app.classroom.models import ResultRequest
-from app.classroom.models import Course
-from app.classroom.service import ClassroomService
+from app.api.classroom.models import ResultRequest
+from app.api.classroom.models import Course
+from app.api.classroom.service import ClassroomService
 from app.core.errors import ToolArgumentsError
-from app.registers import telegram
 from app.registers.classroom import register_classroom_tools
-from app.telegram.service import TelegramService
+from app.api.telegram.service import TelegramService
 
 
 class FakeClassroomService(ClassroomService):

@@ -39,6 +39,10 @@
           "type": "string",
           "enum": ["PUBLISHED", "DRAFT"],
           "description": "Updated assignment state. Use 'PUBLISHED' to publish an assignment currently in draft."
+        },
+        "topic_id": {
+          "type": "string",
+          "description": "Existing Google Classroom topic ID. Set it to move the assignment to that topic."
         }
       },
       "required": ["course_id", "assignment_id"],

@@ -3,7 +3,7 @@ import json
 import pytest
 import httpx
 
-from app.classroom.client import ClassroomClient
+from app.api.classroom.client import ClassroomClient
 from app.core.errors import (
     ExternalServiceUnavailableError,
     ForbiddenError,
@@ -35,6 +35,21 @@ async def test_client_handles_timeout():
 
     with pytest.raises(ExternalServiceUnavailableError):
         await client.get_course(telegram_id=42)
+
+
+@pytest.mark.asyncio
+async def test_client_handles_connection_error_when_creating_course():
+    def mock_connection_error(request: httpx.Request):
+        raise httpx.ConnectError("Connection refused", request=request)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_connection_error))
+    client = ClassroomClient(mock_http)
+
+    with pytest.raises(ExternalServiceUnavailableError):
+        await client.create_course(
+            telegram_id=42,
+            course_name="Operating Systems",
+        )
 
 
 @pytest.mark.asyncio

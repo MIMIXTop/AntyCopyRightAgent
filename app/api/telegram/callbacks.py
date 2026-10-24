@@ -1,13 +1,12 @@
 from aiogram import Router, F
-from aiogram.dispatcher import router
 from aiogram.types import CallbackQuery
 
 from app.agent.models import Message
-from app.classroom.service import ClassroomService
+from app.api.classroom.service import ClassroomService
 from app.core.errors import ApplicationError
 from app.core.logging import logger
 from app.core.types import HistoryStore
-from app.telegram.service import TelegramService
+from app.api.telegram.service import TelegramService
 
 
 def create_callback_router(classroom: ClassroomService, history_store: HistoryStore, telegram: TelegramService) -> Router:
@@ -24,7 +23,9 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             await call.answer("Данные устарели", show_alert=True)
             return
 
-        await call.message.edit_text(f"⏳ Создаю курс «{data['name']}»...")
+        await call.message.edit_text(
+            f"⏳ Создаю курс «{data['name']}»..."
+        )
 
         try:
             result = await classroom.create_course(
@@ -34,7 +35,9 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 course_section=data["section"],
             )
 
-            await call.message.edit_text(f"✅ Курс «{data['name']}» успешно создан!")
+            await call.message.edit_text(
+                f"✅ Курс «{data['name']}» успешно создан!"
+            )
 
             await history_store.append(
                 call.message.chat.id,
@@ -47,8 +50,9 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь подтвердил создание, но произошла ошибка: {e}")
             )
-
-        classroom.remove_pending_course(pending_id)
+        finally:
+            classroom.remove_pending_course(pending_id)
+            await call.answer()
 
 
     @router.callback_query(F.data.startswith("course:create:cancel:"))
@@ -58,7 +62,9 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
         data = classroom.get_pending_course(pending_id)
 
         if data:
-            await call.message.edit_text(f"❌ Создание курса «{data['name']}» отменено.")
+            await call.message.edit_text(
+                f"❌ Создание курса «{data['name']}» отменено."
+            )
             await history_store.append(
                 call.message.chat.id,
                 Message("system", f"Пользователь ОТМЕНИЛ создание курса '{data['name']}'.")
@@ -201,9 +207,12 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 max_points=data["max_points"],
                 due_date=data["due_date"],
                 due_time=data["due_time"],
-                materials=materials if materials else None
+                materials=materials if materials else None,
+                topic_id=data.get("topic_id"),
             )
-            await call.message.edit_text(f"✅ Задание <b>«{data['title']}»</b> успешно опубликовано!", parse_mode="HTML")
+            await call.message.edit_text(
+                f"✅ Задание *«{data['title']}»* успешно опубликовано!"
+            )
 
             await history_store.append(
                 call.message.chat.id,
@@ -215,6 +224,66 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
 
         classroom.remove_pending_assignment(pending_id)
         await call.answer()
+
+    @router.callback_query(F.data.startswith("course:material:create:confirm:"))
+    async def confirm_material_creation(call: CallbackQuery):
+        pending_id = call.data.split(":")[-1]
+        data = classroom.get_pending_material(pending_id)
+        if not data or data["telegram_id"] != call.from_user.id:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+
+        await call.answer()
+        await call.message.edit_text("⏳ Загружаю материалы и создаю материал курса...")
+        materials = list(data.get("materials", []))
+        try:
+            course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
+            folder_id = course.teacher_folder.id if course.teacher_folder else None
+            for attachment in data.get("telegram_attachments", []):
+                file_name, file_bytes = await telegram.get_file_content(attachment.file_id)
+                drive_file = await classroom.upload_to_drive(
+                    telegram_id=data["telegram_id"],
+                    file_name=attachment.file_name or file_name,
+                    content=file_bytes,
+                    mime_type=attachment.mime_type or "application/octet-stream",
+                    parent_folder_id=folder_id,
+                )
+                materials.append({
+                    "driveFile": {
+                        "driveFile": {"id": drive_file["id"]},
+                        "shareMode": "VIEW",
+                    }
+                })
+
+            await classroom.create_course_material(
+                telegram_id=data["telegram_id"],
+                course_id=data["course_id"],
+                title=data["title"],
+                description=data["description"],
+                materials=materials,
+                topic_id=data.get("topic_id"),
+            )
+            await call.message.edit_text("✅ Материал курса успешно создан.")
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", f"Материал '{data['title']}' успешно создан."),
+            )
+        except ApplicationError as error:
+            logger.error("Material creation failed: %s", error)
+            await call.message.edit_text("❌ Не удалось создать материал курса.")
+        finally:
+            classroom.remove_pending_material(pending_id)
+
+    @router.callback_query(F.data.startswith("course:material:create:cancel:"))
+    async def cancel_material_creation(call: CallbackQuery):
+        pending_id = call.data.split(":")[-1]
+        data = classroom.get_pending_material(pending_id)
+        if not data or data["telegram_id"] != call.from_user.id:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+        await call.answer()
+        await call.message.edit_text("❌ Создание материала отменено.")
+        classroom.remove_pending_material(pending_id)
 
     @router.callback_query(F.data.startswith("course:topic:creat:confirm:"))
     async def confirm_topic_creation(call: CallbackQuery):
@@ -231,7 +300,9 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 course_id=data["course_id"],
                 topic_name=data["topic_name"],
             )
-            await call.message.edit_text(f"✅ Раздел «{data['topic_name']}» успешно создан.")
+            await call.message.edit_text(
+                f"✅ Раздел «{data['topic_name']}» успешно создан."
+            )
             await history_store.append(
                 call.message.chat.id,
                 Message("system", f"Раздел '{data['topic_name']}' успешно создан."),
@@ -292,6 +363,17 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                     topic_name=data["topic_name"],
                 )
                 message = "✅ Раздел успешно изменён."
+            elif resource == "material":
+                await classroom.update_course_material(
+                    telegram_id=data["telegram_id"],
+                    course_id=data["course_id"],
+                    material_id=data["material_id"],
+                    title=data["title"],
+                    description=data["description"],
+                    materials=data.get("materials"),
+                    topic_id=data.get("topic_id"),
+                )
+                message = "✅ Материал успешно изменён."
             else:
                 await classroom.update_assignment(
                     telegram_id=data["telegram_id"],
@@ -364,5 +446,13 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
     @router.callback_query(F.data.startswith("course:topic:update:cancel:"))
     async def cancel_topic_update(call: CallbackQuery):
         await cancel_update(call, call.data.split(":")[-1], "topic")
+
+    @router.callback_query(F.data.startswith("course:material:update:confirm:"))
+    async def confirm_material_update(call: CallbackQuery):
+        await apply_update(call, call.data.split(":")[-1], "material")
+
+    @router.callback_query(F.data.startswith("course:material:update:cancel:"))
+    async def cancel_material_update(call: CallbackQuery):
+        await cancel_update(call, call.data.split(":")[-1], "material")
 
     return router

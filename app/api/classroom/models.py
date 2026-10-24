@@ -178,3 +178,13 @@ class CourseTopic(ClassroomModel):
     topic_id: str = Field(validation_alias="topicId")
     course_id: str = Field(validation_alias="courseId")
     update_time: datetime | None = Field(default=None, alias="updateTime")
+
+class CourseMaterial(ClassroomModel):
+    course_id: str = Field(validation_alias="courseId")
+    id: str
+    title: str
+    description: str | None = None
+    materials: list[Material] = Field(default_factory=list)
+    topic_id: str = Field(validation_alias="topicId")
+    alternate_link: str | None = Field(default=None, alias="alternateLink")
+    creator_user_id: str | None = Field(default=None, alias="creatorUserId")
