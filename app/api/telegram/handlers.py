@@ -1,28 +1,35 @@
 import io
 
-from aiogram import Router, F, Bot
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import Message as TgMessage
 
-from app.agent.service import AgentService
 from app.agent.models import TelegramAttachment
+from app.agent.service import AgentService
 from app.agent.voice_service import VoiceService
-from app.classroom.service import ClassroomService
+
+# from app.classroom.service import ClassroomService
 from app.core.errors import ApplicationError
-from app.telegram.keyboards import get_auth_keyboard
 from app.core.logging import logger
+from app.api.telegram.keyboards import get_auth_keyboard
 
 
-def create_router(agent: AgentService, bot: Bot, voice_service: VoiceService, error_presenter) -> Router:
+def create_router(
+    agent: AgentService, bot: Bot, voice_service: VoiceService, error_presenter
+) -> Router:
     router = Router()
 
     @router.message(Command("auth"))
     async def auth(message: TgMessage):
-        logger.info("Telegram /auth called: chat_id=%s user_id=%s", message.chat.id, message.from_user.id)
+        logger.info(
+            "Telegram /auth called: chat_id=%s user_id=%s",
+            message.chat.id,
+            message.from_user.id,
+        )
         await message.answer(
             "Для доступа к вашим курсам и работам в Google Classroom необходимо авторизоваться:\n\n"
             "Нажмите кнопку ниже, разрешите доступ в Google, после чего возвращайтесь в чат.",
-            reply_markup=get_auth_keyboard(message.from_user.id)
+            reply_markup=get_auth_keyboard(message.from_user.id),
         )
 
     @router.message(F.voice)
@@ -39,11 +46,11 @@ def create_router(agent: AgentService, bot: Bot, voice_service: VoiceService, er
         text = await voice_service.transcription_voice(voice_bytes)
         logger.info(f"Распознанный голос от {message.from_user.id}: {text!r}")
 
-        answer = await agent.handle(chat_id=message.chat.id, user_id=message.from_user.id, text=text)
+        answer = await agent.handle(
+            chat_id=message.chat.id, user_id=message.from_user.id, text=text
+        )
         if answer:
             await message.answer(answer)
-
-
 
     @router.message(F.document)
     async def handle_document_message(message: TgMessage):
@@ -53,9 +60,7 @@ def create_router(agent: AgentService, bot: Bot, voice_service: VoiceService, er
         doc = message.document
         caption = message.caption or "Пользователь отправил файл."
 
-        text_for_agent = (
-            caption
-        )
+        text_for_agent = caption
 
         try:
             answer = await agent.handle(
@@ -100,7 +105,9 @@ def create_router(agent: AgentService, bot: Bot, voice_service: VoiceService, er
             return
 
         if answer:
-            logger.info("Telegram answer sent: chat_id=%s text=%r", message.chat.id, answer)
+            logger.info(
+                "Telegram answer sent: chat_id=%s text=%r", message.chat.id, answer
+            )
             await message.answer(answer)
 
     @router.message(F.photo)

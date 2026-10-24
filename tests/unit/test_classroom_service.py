@@ -1,7 +1,7 @@
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from app.classroom.service import ClassroomService
+from app.api.classroom.service import ClassroomService
 from app.core.errors import ValidationError
 
 

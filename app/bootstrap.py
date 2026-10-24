@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import httpx
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from openai import AsyncOpenAI
 
 from app.agent.history import InMemoryHistoryStore
@@ -8,10 +10,10 @@ from app.agent.llm import OpenAIAdapter
 from app.agent.models import Message, ToolContext, ToolResult
 from app.agent.service import AgentService
 from app.agent.tools import ToolRegistry
-from app.telegram.service import TelegramService
+from app.api.telegram.service import TelegramService
 from app.tools.loader import load_schema
-from app.classroom.client import ClassroomClient
-from app.classroom.service import ClassroomService
+from app.api.classroom.client import ClassroomClient
+from app.api.classroom.service import ClassroomService
 from app.handlers.web_search import WebSearchService
 from app.registers.classroom import register_classroom_tools
 from app.registers.telegram import register_telegram_tools
@@ -19,8 +21,8 @@ from app.registers.web_search import register_web_search
 from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
 from app.core.logging import configure_logging
-from app.telegram.handlers import create_router
-from app.telegram.callbacks import create_callback_router
+from app.api.telegram.handlers import create_router
+from app.api.telegram.callbacks import create_callback_router
 from app.core.logging import logger
 from app.agent.voice_service import VoiceService
 
@@ -50,7 +52,10 @@ async def build_application(settings: Settings) -> Application:
         base_url=settings.LLM_BASE_URL.rstrip("/"),
         api_key=settings.openai_api_key,
     )
-    bot = Bot(token=settings.bot_token_clean)
+    bot = Bot(
+        token=settings.bot_token_clean,
+        default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
+    )
 
     web_service = WebSearchService(10)
 

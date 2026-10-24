@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from app.classroom.client import ClassroomClient
+from app.api.classroom.client import ClassroomClient
 from app.core.errors import ValidationError
 from app.core.logging import logger
 
@@ -14,6 +14,8 @@ class ClassroomService:
         self._pending_courses = {}
         self._pending_announcements = {}
         self._pending_course_works = {}
+        self._pending_topics = {}
+        self._pending_materials = {}
         self._pending_updates = {}
         logger.info("ClassroomService initialized")
 
@@ -27,7 +29,8 @@ class ClassroomService:
             due_date: str | None,
             due_time: str | None,
             links: list[str] | None,
-            telegram_file_ids: list[str] | None
+            telegram_file_ids: list[str] | None,
+            topic_id: str | None = None,
     ):
         pending_id = str(uuid.uuid4())[:8]
         self._pending_course_works[pending_id] = {
@@ -39,17 +42,65 @@ class ClassroomService:
             "due_date": due_date,
             "due_time": due_time,
             "links": links or [],
-            "telegram_file_ids": telegram_file_ids or []
+            "telegram_file_ids": telegram_file_ids or [],
+            "topic_id": topic_id,
         }
 
+        return pending_id
+
+    def get_pending_material(self, pending_id: str) -> dict | None:
+        return self._pending_materials.get(pending_id)
+
+    def remove_pending_material(self, pending_id: str) -> None:
+        self._pending_materials.pop(pending_id, None)
+
+    def hold_course_material(
+        self,
+        telegram_id: int,
+        course_id: str,
+        title: str,
+        description: str | None,
+        materials: list[dict] | None,
+        topic_id: str | None,
+        telegram_attachments: list | None,
+    ):
+        pending_id = str(uuid.uuid4())[:8]
+        self._pending_materials[pending_id] = {
+            "telegram_id": telegram_id,
+            "course_id": course_id,
+            "title": title,
+            "description": description,
+            "materials": materials or [],
+            "topic_id": topic_id,
+            "telegram_attachments": telegram_attachments or [],
+        }
+        return pending_id
+
+    def hold_course_topic(
+            self,
+            telegram_id: int,
+            course_id: str,
+            topic_name: str
+    ):
+        pending_id = str(uuid.uuid4())[:8]
+        self._pending_topics[pending_id] = {
+            "telegram_id": telegram_id,
+            "course_id": course_id,
+            "topic_name": topic_name
+        }
         return pending_id
 
     def get_pending_assignment(self, pending_id: str) -> dict | None:
         return self._pending_course_works.get(pending_id, None)
 
-
     def remove_pending_assignment(self, pending_id: str) -> None:
         return self._pending_course_works.pop(pending_id, None)
+
+    def get_pending_topic(self, pending_id: str) -> dict | None:
+        return self._pending_topics.get(pending_id)
+
+    def remove_pending_topic(self, pending_id: str) -> None:
+        return self._pending_topics.pop(pending_id, None)
 
     def hold_update(self, resource: str, telegram_id: int, **data) -> str:
         pending_id = str(uuid.uuid4())[:8]
@@ -379,6 +430,7 @@ class ClassroomService:
             due_date: str | None = None,
             due_time: str | None = None,
             state: str | None = None,
+            topic_id: str | None = None,
     ):
         logger.info(
             "ClassroomService.update_assignment called: telegram_id=%s course_id=%s assignment_id=%s",
@@ -414,6 +466,7 @@ class ClassroomService:
             due_date=due_date,
             due_time=due_time,
             state=state,
+            topic_id=topic_id,
         )
 
     async def get_announcements(self, telegram_id: int, course_id: str):
@@ -425,6 +478,111 @@ class ClassroomService:
 
         announcements = await self.client.get_announcements(telegram_id, course_id)
         return announcements
+
+    async def get_topics(self, telegram_id: int, course_id: str):
+        logger.info("ClassroomService.get_topics called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+
+        topics = await self.client.get_topics_in_course(telegram_id, course_id)
+        return topics
+
+    async def create_topic(self, telegram_id: int, course_id: str, topic_name: str):
+        logger.info("ClassroomService.create_topic called: telegram_id=%s course_id=%s topic_name=%s", telegram_id, course_id, topic_name)
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ValidationError("Topic Name is required")
+        if len(topic_name) > 750:
+            raise ValidationError("Topic Name is too long")
+
+        result = await self.client.create_topic_in_course(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            topic_name=topic_name,
+        )
+
+        return result
+
+    async def update_topic(self, telegram_id: int, course_id: str, topic_name: str, topic_id: str):
+        logger.info("ClassroomService.update_topic called: telegram_id=%s course_id=%s topic_name=%s topic_id=%s", telegram_id, course_id, topic_name, topic_id)
+
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(topic_name, str) or not topic_name.strip():
+            raise ValidationError("Topic Name is required")
+        if len(topic_name) > 750:
+            raise ValidationError("Topic Name is too long")
+        if not isinstance(topic_id, str) or not topic_id.strip():
+            raise ValidationError("Topic ID is required")
+        result = await self.client.update_topic_in_course(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            topic_name=topic_name,
+            topic_id=topic_id,
+        )
+        return result
+
+    async def get_course_materials_list(self, telegram_id: int, course_id: str):
+        logger.info("ClassroomService.get_course_materials_list called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        self._validate_telegram_id(telegram_id)
+
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        result = await self.client.get_course_materials(telegram_id, course_id)
+        return result
+
+    async def create_course_material(self, telegram_id: int, course_id: str, title: str, description: str | None, materials: list[dict], topic_id: str | None = None):
+        logger.info("ClassroomService.create_course_material called: telegram_id=%s course_id=%s", telegram_id, course_id)
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(title, str) or not title.strip():
+            raise ValidationError("Material title is required")
+        if len(title) > 750:
+            raise ValidationError("Material title is too long")
+        if description is not None and len(description) > 30_000:
+            raise ValidationError("Material description is too long")
+        if not isinstance(materials, list):
+            raise ValidationError("Materials must be a list")
+
+        result = await self.client.create_course_material(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            materials=materials,
+            title=title,
+            description=description,
+            topic_id=topic_id
+        )
+        return result
+
+    async def update_course_material(self, telegram_id: int, course_id: str, material_id: str, title: str | None, description: str | None, materials: list[dict] | None = None, topic_id: str | None = None):
+        logger.info("ClassroomService.update_course_material called: telegram_id=%s course_id=%s material_id=%s", telegram_id, course_id, material_id)
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(material_id, str) or not material_id.strip():
+            raise ValidationError("Material ID is required")
+        if title is not None and (not title.strip() or len(title) > 750):
+            raise ValidationError("Material title must be between 1 and 750 characters")
+        if description is not None and len(description) > 30_000:
+            raise ValidationError("Material description is too long")
+
+        result = await self.client.update_course_material(
+            telegram_id=telegram_id,
+            course_id=course_id,
+            material_id=material_id,
+            title=title,
+            description=description,
+            materials=materials,
+            topic_id=topic_id
+        )
+        return result
 
     @staticmethod
     def _validate_telegram_id(telegram_id: int) -> None:

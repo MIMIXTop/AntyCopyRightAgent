@@ -1,7 +1,6 @@
-import json
 from app.tools.loader import load_schema
 from app.core.errors import ToolArgumentsError
-from app.telegram.service import TelegramService
+from app.api.telegram.service import TelegramService
 from app.agent.tools import ToolRegistry, ToolContext, ToolResult
 from app.core.logging import logger
 
