@@ -37,7 +37,30 @@ class AgentService:
             chat_id,
             Message("user", content=text, attachments=attachments or []),
         )
+        return await self._run_loop(chat_id, user_id, attachments or [])
 
+    async def resume_after_action(
+        self,
+        chat_id: int,
+        user_id: int,
+        event: dict,
+    ) -> str:
+        """Resume the agent after an external confirmation callback."""
+        await self._history.append(
+            chat_id,
+            Message(
+                "system",
+                json.dumps(event, ensure_ascii=False),
+            ),
+        )
+        return await self._run_loop(chat_id, user_id, [])
+
+    async def _run_loop(
+        self,
+        chat_id: int,
+        user_id: int,
+        attachments: list[TelegramAttachment],
+    ) -> str:
         for iteration in range(self._max_iterations):
             logger.info("Agent iteration started: chat_id=%s iteration=%s", chat_id, iteration + 1)
             response = await self._llm.complete(
@@ -94,7 +117,10 @@ class AgentService:
                     chat_id,
                     Message("tool", result.content, call.id)
                 )
-                if result.terminal:
+                # Only the explicit finish tool may end the agent loop. Other
+                # tools can return status data such as a pending confirmation
+                # and the model must decide whether more actions are needed.
+                if result.terminal and call.name in {"finish", "ask_choice"}:
                     logger.info(
                         "Agent tool terminated flow: chat_id=%s tool=%s call_id=%s",
                         chat_id,

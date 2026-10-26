@@ -7,10 +7,76 @@ from app.core.errors import ApplicationError
 from app.core.logging import logger
 from app.core.types import HistoryStore
 from app.api.telegram.service import TelegramService
+from app.agent.service import AgentService
+import json
 
 
-def create_callback_router(classroom: ClassroomService, history_store: HistoryStore, telegram: TelegramService) -> Router:
+def create_callback_router(
+    classroom: ClassroomService,
+    history_store: HistoryStore,
+    telegram: TelegramService,
+    agent: AgentService | None = None,
+) -> Router:
     router = Router()
+
+    async def notify_agent(call: CallbackQuery, action: str, status: str, success: bool, details: str):
+        event = {
+            "type": "action_result",
+            "action": action,
+            "status": status,
+            "success": success,
+            "details": details,
+        }
+        if agent is None:
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", json.dumps(event, ensure_ascii=False)),
+            )
+            return
+        response = await agent.resume_after_action(
+            chat_id=call.message.chat.id,
+            user_id=call.from_user.id,
+            event=event,
+        )
+        if response:
+            await telegram.send_message(
+                chat_id=call.message.chat.id,
+                text=response,
+            )
+
+    @router.callback_query(F.data.startswith("agent:choice:"))
+    async def handle_agent_choice(call: CallbackQuery):
+        _, _, choice_id, option_index_text = call.data.split(":", 3)
+        try:
+            option_index = int(option_index_text)
+        except ValueError:
+            await call.answer("Некорректный выбор", show_alert=True)
+            return
+
+        choice = telegram.claim_choice(choice_id, option_index, call.from_user.id)
+        if not choice or choice["chat_id"] != call.message.chat.id:
+            await call.answer("Выбор устарел", show_alert=True)
+            return
+
+        selected = choice["selected"]
+        await call.answer()
+        await call.message.edit_text(
+            f"{choice['question']}\n\nВыбрано: {selected['label']}"
+        )
+        await notify_agent(
+            call,
+            "ask_choice",
+            "selected",
+            True,
+            json.dumps(
+                {
+                    "choice_id": choice_id,
+                    "label": selected["label"],
+                    "value": selected["value"],
+                },
+                ensure_ascii=False,
+            ),
+        )
 
     @router.callback_query(F.data.startswith("course:create:confirm"))
     async def confirm_course_creation(call: CallbackQuery):
@@ -43,6 +109,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь подтвердил создание курса '{data['name']}'. Курс успешно создан."),
             )
+            await notify_agent(call, "create_course", "confirmed", True, f"Курс '{data['name']}' успешно создан.")
 
         except ApplicationError as e:
             await call.message.edit_text("❌ Ошибка при создании курса.")
@@ -50,6 +117,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь подтвердил создание, но произошла ошибка: {e}")
             )
+            await notify_agent(call, "create_course", "confirmed", False, str(e))
         finally:
             classroom.remove_pending_course(pending_id)
             await call.answer()
@@ -69,6 +137,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь ОТМЕНИЛ создание курса '{data['name']}'.")
             )
+            await notify_agent(call, "create_course", "cancelled", False, f"Создание курса '{data['name']}' отменено.")
             classroom.remove_pending_course(pending_id)
 
     @router.callback_query(F.data.startswith("course:announcement:create:confirm:"))
@@ -123,6 +192,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь подтвердил создание анонса курса '{data['course_id']}'. Анонс успешно создан.")
             )
+            await notify_agent(call, "create_announcement", "confirmed", True, "Анонс успешно создан.")
 
         except ApplicationError as e:
             await call.message.edit_text("❌ Ошибка при создании анонса.")
@@ -130,6 +200,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Пользователь подтвердил создание, но произошла ошибка: {e}")
             )
+            await notify_agent(call, "create_announcement", "confirmed", False, str(e))
 
         classroom.remove_pending_announcement(pending_id)
 
@@ -147,6 +218,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 Message(
                     "system", f"Пользователь ОТМЕНИЛ создание анонса для курса '{data['course_id']}'." )
             )
+            await notify_agent(call, "create_announcement", "cancelled", False, "Создание анонса отменено.")
             classroom.remove_pending_announcement(pending_id)
 
     @router.callback_query(F.data.startswith("course:work:create:cancel:"))
@@ -158,6 +230,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             Message(
                 "system", f"Пользователь ОТМЕНИЛ создание работы для курса '{data['course_id']}'.")
         )
+        await notify_agent(call, "create_assignment", "cancelled", False, "Создание задания отменено.")
         await call.message.edit_text("❌ Создание задания отменено.")
         await call.answer()
         classroom.remove_pending_assignment(pending_id)
@@ -218,9 +291,11 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Задание '{data['title']}' успешно создано в курсе {data['course_id']}.")
             )
+            await notify_agent(call, "create_assignment", "confirmed", True, f"Задание '{data['title']}' успешно создано.")
         except Exception as e:
             logger.error(f"Ошибка при создании задания: {e}")
             await call.message.edit_text("❌ Ошибка при создании задания.")
+            await notify_agent(call, "create_assignment", "confirmed", False, str(e))
 
         classroom.remove_pending_assignment(pending_id)
         await call.answer()
@@ -268,9 +343,11 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Материал '{data['title']}' успешно создан."),
             )
+            await notify_agent(call, "create_material", "confirmed", True, f"Материал '{data['title']}' успешно создан.")
         except ApplicationError as error:
             logger.error("Material creation failed: %s", error)
             await call.message.edit_text("❌ Не удалось создать материал курса.")
+            await notify_agent(call, "create_material", "confirmed", False, str(error))
         finally:
             classroom.remove_pending_material(pending_id)
 
@@ -283,6 +360,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             return
         await call.answer()
         await call.message.edit_text("❌ Создание материала отменено.")
+        await notify_agent(call, "create_material", "cancelled", False, "Создание материала отменено.")
         classroom.remove_pending_material(pending_id)
 
     @router.callback_query(F.data.startswith("course:topic:creat:confirm:"))
@@ -307,6 +385,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Раздел '{data['topic_name']}' успешно создан."),
             )
+            await notify_agent(call, "create_topic", "confirmed", True, f"Раздел '{data['topic_name']}' успешно создан.")
         except ApplicationError as error:
             logger.error("Topic creation failed: %s", error)
             await call.message.edit_text("❌ Не удалось создать раздел.")
@@ -314,6 +393,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", f"Создание раздела не выполнено: {error}"),
             )
+            await notify_agent(call, "create_topic", "confirmed", False, str(error))
         finally:
             classroom.remove_pending_topic(pending_id)
 
@@ -326,6 +406,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             return
         await call.answer()
         await call.message.edit_text("❌ Создание раздела отменено.")
+        await notify_agent(call, "create_topic", "cancelled", False, "Создание раздела отменено.")
         classroom.remove_pending_topic(pending_id)
 
     async def apply_update(call: CallbackQuery, pending_id: str, resource: str):
@@ -393,12 +474,14 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
                 call.message.chat.id,
                 Message("system", message),
             )
+            await notify_agent(call, f"update_{resource}", "confirmed", True, message)
         except ApplicationError as error:
             await call.message.edit_text("❌ Не удалось изменить объект.")
             await history_store.append(
                 call.message.chat.id,
                 Message("system", f"Изменение не выполнено: {error}"),
             )
+            await notify_agent(call, f"update_{resource}", "confirmed", False, str(error))
         finally:
             classroom.remove_pending_update(pending_id)
 
@@ -413,6 +496,7 @@ def create_callback_router(classroom: ClassroomService, history_store: HistorySt
             call.message.chat.id,
             Message("system", "Пользователь отменил изменение."),
         )
+        await notify_agent(call, f"update_{resource}", "cancelled", False, "Изменение отменено.")
         classroom.remove_pending_update(pending_id)
 
     @router.callback_query(F.data.startswith("course:update:confirm:"))

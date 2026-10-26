@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     VOICE_BASE_URL: str
     VOICE_TOKEN: SecretStr
     VOICE_LLM_MODEL: str
+    SPEECH_BASE_URL: str
+    SPEECH_TOKEN: SecretStr
+    SPEECH_LLM_MODEL: str
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
@@ -34,6 +37,10 @@ class Settings(BaseSettings):
     @property
     def voice_api_key(self) -> str:
         return self.VOICE_TOKEN.get_secret_value().strip()
+
+    @property
+    def speech_api_key(self) -> str:
+        return self.SPEECH_TOKEN.get_secret_value().strip()
 
 
 settings = Settings()

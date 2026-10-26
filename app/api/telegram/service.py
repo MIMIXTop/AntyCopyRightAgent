@@ -1,6 +1,9 @@
 import io
+from uuid import uuid4
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import BufferedInputFile
 
 from app.core.errors import ApplicationError
 from app.api.telegram.keyboards import *
@@ -10,14 +13,35 @@ class TelegramService:
 
     def __init__(self, bot: Bot):
         self._bot = bot
+        self._choices: dict[str, dict] = {}
         logger.info("TelegramService initialized")
+
+    async def _send_message(self, **kwargs):
+        try:
+            await self._bot.send_message(**kwargs)
+        except TelegramBadRequest as error:
+            if "can't parse entities" not in str(error).lower():
+                raise
+            logger.warning(
+                "Telegram Markdown parsing failed; retrying message without formatting: chat_id=%s",
+                kwargs.get("chat_id"),
+            )
+            await self._bot.send_message(
+                **{key: value for key, value in kwargs.items() if key != "parse_mode"},
+                parse_mode=None,
+            )
 
     async def send_message(self, text: str, chat_id: int):
         logger.info("TelegramService.send_message called: chat_id=%s text=%r", chat_id, text)
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=text,
         )
+
+    async def send_speech(self, speech: bytes, chat_id: int):
+        logger.info("TelegramService.send_speech called: chat_id=%s bytes=%s", chat_id, len(speech))
+        voice = BufferedInputFile(speech, filename="voice.ogg")
+        await self._bot.send_voice(voice=voice, chat_id=chat_id)
 
     async def send_error(self, chat_id: int, error: ApplicationError):
         logger.error("TelegramService.send_error called: chat_id=%s error=%s", chat_id, error)
@@ -42,7 +66,7 @@ class TelegramService:
             course_name,
             pending_id,
         )
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Вы уверены, что хотите создать курс *«{course_name}»*?",
             reply_markup=get_course_confirm_keyboard(pending_id=pending_id),
@@ -55,7 +79,7 @@ class TelegramService:
             course_name,
             pending_id,
         )
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=(
                 f"Вы уверены, что хотите в курс *«{course_name}»* "
@@ -79,7 +103,7 @@ class TelegramService:
             f"{deadline_text}"
         )
 
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=msg_text,
             reply_markup=get_course_work_keyboard(pending_id=pending_id),
@@ -90,7 +114,7 @@ class TelegramService:
             f"• {key}: {value}"
             for key, value in changes.items() if value is not None
         )
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Изменить курс *«{course_name}»*?\n\n{details}",
             reply_markup=get_update_course_keyboard(pending_id),
@@ -101,7 +125,7 @@ class TelegramService:
             f"• {key}: {value}"
             for key, value in changes.items() if value is not None
         )
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Изменить анонс?\n\n{details}",
             reply_markup=get_update_announcement_keyboard(pending_id),
@@ -112,21 +136,21 @@ class TelegramService:
             f"• {key}: {value}"
             for key, value in changes.items() if value is not None
         )
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Изменить задание?\n\n{details}",
             reply_markup=get_update_work_keyboard(pending_id),
         )
 
     async def request_invite_link(self, chat_id: int, text: str, url: str):
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=text,
             reply_markup=get_invite_url_keyboard(url=url)
         )
 
     async def request_course_topic_create(self, chat_id: int, pending_id: str,topic_name: str):
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Вы уверены, что хотите создать раздел *«{topic_name}»*?",
             reply_markup=get_create_course_topic_keyboard(pending_id=pending_id)
@@ -138,7 +162,7 @@ class TelegramService:
             for key, value in changes.items() if value is not None
         )
 
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Изменить раздел?\n\n{details}",
             reply_markup=get_update_course_topic_keyboard(pending_id=pending_id),
@@ -155,7 +179,7 @@ class TelegramService:
                 for material in materials_payload
             )
 
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Вы уверены, что хотите создать материал курса?\n\n{details}",
             reply_markup=get_create_course_material_keyboard(pending_id=pending_id)
@@ -167,8 +191,42 @@ class TelegramService:
             for key, value in changes.items() if value is not None
         )
 
-        await self._bot.send_message(
+        await self._send_message(
             chat_id=chat_id,
             text=f"Изменить материал курса?\n\n{details}",
             reply_markup=get_update_course_material_keyboard(pending_id=pending_id),
         )
+
+    async def request_choice(
+        self,
+        chat_id: int,
+        user_id: int,
+        question: str,
+        options: list[dict[str, str]],
+    ) -> str:
+        choice_id = uuid4().hex
+        self._choices[choice_id] = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "question": question,
+            "options": options,
+        }
+        await self._send_message(
+            chat_id=chat_id,
+            text=question,
+            reply_markup=get_choice_keyboard(choice_id, options),
+        )
+        return choice_id
+
+    def claim_choice(self, choice_id: str, option_index: int, user_id: int) -> dict | None:
+        choice = self._choices.get(choice_id)
+        if not choice or choice["user_id"] != user_id:
+            return None
+        if option_index < 0 or option_index >= len(choice["options"]):
+            return None
+        self._choices.pop(choice_id, None)
+        return {
+            **choice,
+            "selected": choice["options"][option_index],
+            "option_index": option_index,
+        }

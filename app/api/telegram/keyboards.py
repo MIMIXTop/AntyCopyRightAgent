@@ -159,3 +159,14 @@ def get_update_course_material_keyboard(pending_id: str) -> InlineKeyboardMarkup
             )
         ]]
     )
+
+def get_choice_keyboard(choice_id: str, options: list[dict[str, str]]) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=option["label"][:64],
+                callback_data=f"agent:choice:{choice_id}:{index}",
+            )]
+            for index, option in enumerate(options)
+        ]
+    )
