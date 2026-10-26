@@ -118,6 +118,7 @@ async def build_application(settings: Settings) -> Application:
             classroom=classroom,
             history_store=storage,
             telegram=telegram,
+            agent=agent,
         )
     )
     logger.info("Application bootstrap completed")

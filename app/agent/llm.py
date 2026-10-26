@@ -101,6 +101,7 @@ class OpenAIAdapter(LLMClient):
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
+            kwargs["parallel_tool_calls"] = False
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
@@ -121,14 +122,19 @@ class OpenAIAdapter(LLMClient):
 
         parsed_tool_calls = []
         if choice.tool_calls:
-            for tc in choice.tool_calls:
-                parsed_tool_calls.append(
-                    ToolCallInfo(
-                        id=tc.id,
-                        name=tc.function.name,
-                        arguments=tc.function.arguments
-                    )
+            if len(choice.tool_calls) > 1:
+                logger.warning(
+                    "LLM returned multiple tool calls; executing only the first one sequentially: count=%s",
+                    len(choice.tool_calls),
                 )
+            tc = choice.tool_calls[0]
+            parsed_tool_calls.append(
+                ToolCallInfo(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=tc.function.arguments
+                )
+            )
 
         return LLMResponse(
             text=choice.content or "",

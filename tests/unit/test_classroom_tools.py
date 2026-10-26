@@ -204,3 +204,17 @@ async def test_update_course_uses_confirmation_keyboard_flow():
     pending = service.get_pending_update(payload["pending_id"])
     assert pending["resource"] == "course"
     assert pending["name"] == "Renamed"
+
+
+@pytest.mark.asyncio
+async def test_get_topic_list_rejects_course_name_as_id():
+    service = FakeClassroomService()
+    registry = ToolRegistry()
+    register_classroom_tools(registry, service, telegram=FakeTelegramService())
+
+    with pytest.raises(ToolArgumentsError, match="exact course ID"):
+        await registry.call(
+            "get_topic_list",
+            ToolContext(chat_id=1, user_id=42, call_id="call-topic"),
+            {"course_id": "Rust: начало"},
+        )

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 class ClassroomModel(BaseModel):
@@ -143,7 +143,10 @@ class StudentSubmission(ClassroomModel):
 
 class Profile(ClassroomModel):
     id: str
-    email: str | None = None
+    email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("email", "emailAddress"),
+    )
     given_name: str | None = Field(
         default=None,
         validation_alias=AliasChoices("given_name", "givenName"),
@@ -153,9 +156,21 @@ class Profile(ClassroomModel):
         validation_alias=AliasChoices("full_name", "fullName"),
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def flatten_google_profile(cls, value):
+        if not isinstance(value, dict):
+            return value
+        value = dict(value)
+        name = value.get("name")
+        if isinstance(name, dict):
+            value.setdefault("givenName", name.get("givenName"))
+            value.setdefault("fullName", name.get("fullName"))
+        return value
+
 
 class Student(ClassroomModel):
-    id: str
+    id: str = Field(validation_alias=AliasChoices("id", "userId"))
     course_id: str = Field(validation_alias="courseId")
     profile: Profile
 
@@ -185,6 +200,6 @@ class CourseMaterial(ClassroomModel):
     title: str
     description: str | None = None
     materials: list[Material] = Field(default_factory=list)
-    topic_id: str = Field(validation_alias="topicId")
+    topic_id: str | None = Field(default=None, validation_alias="topicId")
     alternate_link: str | None = Field(default=None, alias="alternateLink")
     creator_user_id: str | None = Field(default=None, alias="creatorUserId")

@@ -13,6 +13,20 @@ def _json_model(model) -> dict:
     return model.model_dump(mode="json")
 
 
+def _require_course_id(tool_name: str, value) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ToolArgumentsError(
+            tool_name,
+            "course_id is required and must be the exact ID returned by get_courses",
+        )
+    if any(character.isspace() for character in value):
+        raise ToolArgumentsError(
+            tool_name,
+            "course_id must be an exact course ID, not a course name",
+        )
+    return value
+
+
 def register_classroom_tools(registry, classroom: ClassroomService, telegram: TelegramService) -> None:
     logger.info("Registering Classroom tools")
     async def get_students(context: ToolContext, args: dict):
@@ -468,8 +482,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
     async def get_course_topics(context: ToolContext, args: dict) -> ToolResult:
         telegram_id = context.user_id
         course_id = args.get("course_id")
-        if not isinstance(course_id, str) or not course_id.strip():
-            raise ToolArgumentsError("get_topic_list", "course_id is required and must be a non-empty string")
+        course_id = _require_course_id("get_topic_list", course_id)
 
         topics = await classroom.get_topics(telegram_id, course_id)
         return ToolResult(
@@ -485,8 +498,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         course_id = args.get("course_id")
         topic_name = args.get("topic_name")
 
-        if not isinstance(course_id, str) or not course_id.strip():
-            raise ToolArgumentsError("create_topic", "course_id is required and must be a non-empty string")
+        course_id = _require_course_id("create_topic", course_id)
         if not isinstance(topic_name, str) or not topic_name.strip():
             raise ToolArgumentsError("create_topic", "topic_name is required and must be a non-empty string")
 
@@ -516,8 +528,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         course_id = args.get("course_id")
         topic_name = args.get("topic_name")
         topic_id = args.get("topic_id")
-        if not isinstance(course_id, str) or not course_id.strip():
-            raise ToolArgumentsError("update_topic", "course_id is required and must be a non-empty string")
+        course_id = _require_course_id("update_topic", course_id)
         if not isinstance(topic_name, str) or not topic_name.strip():
             raise ToolArgumentsError("update_topic", "topic_name is required and must be a non-empty string")
         if not isinstance(topic_id, str) or not topic_id.strip():

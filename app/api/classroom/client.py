@@ -97,7 +97,7 @@ class ClassroomClient:
             raise ExternalServiceUnavailableError from error
 
         _check_error(res)
-        return self._parse_list(res, Course, "courses", "courses")
+        return self._parse_list(res, Course, "courses", "courses", empty_body_is_empty=True)
 
     async def get_course_works(
             self,
@@ -114,7 +114,13 @@ class ClassroomClient:
             raise ExternalServiceUnavailableError from error
 
         _check_error(res)
-        return self._parse_list(res, CourseWork, "course works", "courseWork")
+        return self._parse_list(
+            res,
+            CourseWork,
+            "course works",
+            "courseWork",
+            empty_body_is_empty=True,
+        )
 
     async def get_submissions(
             self,
@@ -137,7 +143,13 @@ class ClassroomClient:
             raise ExternalServiceUnavailableError from error
 
         _check_error(res)
-        return self._parse_list(res, StudentSubmission, "submissions", "studentSubmissions")
+        return self._parse_list(
+            res,
+            StudentSubmission,
+            "submissions",
+            "studentSubmissions",
+            empty_body_is_empty=True,
+        )
 
     async def get_student_in_course(
             self,
@@ -154,7 +166,7 @@ class ClassroomClient:
             raise ExternalServiceUnavailableError from error
 
         _check_error(res)
-        return self._parse_list(res, Student, "students", "students")
+        return self._parse_list(res, Student, "students", "students", empty_body_is_empty=True)
 
     async def create_course(
             self,
@@ -555,7 +567,13 @@ class ClassroomClient:
             raise ExternalServiceUnavailableError("Classroom") from error
 
         _check_error(res)
-        return self._parse_list(res, Announcement, "announcements", "announcements")
+        return self._parse_list(
+            res,
+            Announcement,
+            "announcements",
+            "announcements",
+            empty_body_is_empty=True,
+        )
 
 
     async def get_course_materials(self, telegram_id: int, course_id):
@@ -565,7 +583,13 @@ class ClassroomClient:
         try:
             response = await self.http.get(url, params=params)
             _check_error(response)
-            return self._parse_list(response, CourseMaterial, "courseMaterial", "courseMaterial")
+            return self._parse_list(
+                response,
+                CourseMaterial,
+                "courseMaterial",
+                ("courseWorkMaterial", "courseMaterial", "courseWorkMaterials"),
+                empty_body_is_empty=True,
+            )
         except httpx.RequestError as error:
             logger.error("Failed to connect to C++ server: %s", error)
             raise ExternalServiceUnavailableError("Classroom") from error

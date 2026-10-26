@@ -1,11 +1,16 @@
 import httpx
-
 import logging
 from app.config.settings import settings
 from app.core.errors import UnauthorizedError, ForbiddenError, safe_error_detail, UpstreamServiceError, \
     ExternalServiceUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+
+
+
+
 
 
 def _check_error(response: httpx.Response):
@@ -49,9 +54,22 @@ class SheetsClient:
     async def get_sheet_value(self, telegram_id: int, sheet_id: str, range: str):
         url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}/values/{range}"
         params = {"telegram_id": telegram_id}
+        logger.info(
+            "Sheets read request: sheet_id=%s range=%r url=%s params=%s",
+            sheet_id,
+            range,
+            url,
+            params,
+        )
 
         try:
             response = await self._http.get(url, params=params)
+            logger.info(
+                "Sheets read response: request_url=%s status=%s body=%s",
+                response.request.url,
+                response.status_code,
+                response.text[:500],
+            )
             _check_error(response)
             return response.json()
         except httpx.RequestError as error:
@@ -65,9 +83,27 @@ class SheetsClient:
             "telegram_id": telegram_id
         }
         body = {"values": values}
+        logger.info(
+            "Sheets append request: sheet_id=%s range=%r url=%s params=%s rows=%s",
+            sheet_id,
+            range_name,
+            url,
+            params,
+            len(values),
+        )
 
         try:
-            response = await self._http.put(url, params=params, json=body)
+            response = await self._http.post(
+                httpx.URL(url),
+                params=params,
+                json=body,
+            )
+            logger.info(
+                "Sheets append response: request_url=%s status=%s body=%s",
+                response.request.url,
+                response.status_code,
+                response.text[:500],
+            )
             _check_error(response)
             return response.json()
         except httpx.RequestError as error:
@@ -82,9 +118,23 @@ class SheetsClient:
         }
 
         body = {"values": values}
+        logger.info(
+            "Sheets update request: sheet_id=%s range=%r url=%s params=%s rows=%s",
+            sheet_id,
+            range_name,
+            url,
+            params,
+            len(values),
+        )
 
         try:
             response = await self._http.put(url, params=params, json=body)
+            logger.info(
+                "Sheets update response: request_url=%s status=%s body=%s",
+                response.request.url,
+                response.status_code,
+                response.text[:500],
+            )
             _check_error(response)
             return response.json()
         except httpx.RequestError as error:
