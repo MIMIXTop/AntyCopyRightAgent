@@ -4,13 +4,15 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from app.api.classroom.client import ClassroomClient
+from app.api.drive.client import DriveClient
 from app.core.errors import ValidationError
 from app.core.logging import logger
 
 
 class ClassroomService:
-    def __init__(self, client: ClassroomClient):
+    def __init__(self, client: ClassroomClient, drive_client: DriveClient | None = None):
         self.client = client
+        self.drive_client = drive_client
         self._pending_courses = {}
         self._pending_announcements = {}
         self._pending_course_works = {}
@@ -18,6 +20,24 @@ class ClassroomService:
         self._pending_materials = {}
         self._pending_updates = {}
         logger.info("ClassroomService initialized")
+
+    async def upload_to_drive(
+        self,
+        telegram_id: int,
+        file_name: str,
+        content: bytes,
+        mime_type: str,
+        parent_folder_id: str | None = None,
+    ) -> dict:
+        if self.drive_client is None:
+            raise ValidationError("Drive client is not configured")
+        return await self.drive_client.upload_to_drive(
+            telegram_id=telegram_id,
+            file_name=file_name,
+            content=content,
+            mime_type=mime_type,
+            parent_folder_id=parent_folder_id,
+        )
 
     def hold_course_work(
             self,

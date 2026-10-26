@@ -54,8 +54,8 @@ class SheetsClient:
             response = await self._http.get(url, params=params)
             _check_error(response)
             return response.json()
-        except UpstreamServiceError as error:
-            raise ExternalServiceUnavailableError from error
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error
 
     async def post_sheet_value(self, telegram_id: int, sheet_id: str, range_name: str, values: list[list]):
         url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}/values/{range_name}:append"
@@ -70,8 +70,8 @@ class SheetsClient:
             response = await self._http.put(url, params=params, json=body)
             _check_error(response)
             return response.json()
-        except UpstreamServiceError as error:
-            raise ExternalServiceUnavailableError from error
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error
 
     async def put_sheet_value(self, telegram_id: int, sheet_id: str, range_name: str, values: list[list]):
         url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}/values/{range_name}"
@@ -87,7 +87,45 @@ class SheetsClient:
             response = await self._http.put(url, params=params, json=body)
             _check_error(response)
             return response.json()
-        except UpstreamServiceError as error:
-            raise ExternalServiceUnavailableError from error
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error
 
-    async def delete_sheet_value(self, telegram_id: int, sheet_id: str):
+    async def get_sheet_info(self, telegram_id: int, sheet_id: str):
+        url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}"
+        params = {
+            "fields": "sheets(properties(sheetId,title,index))",
+            "telegram_id": telegram_id
+        }
+
+        try:
+            response = await self._http.get(url, params=params)
+            _check_error(response)
+            return response.json()
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error
+
+    async def create_sheet_tab(self, telegram_id: int, sheet_id: str, tab_name: str):
+        url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}:batchUpdate"
+
+        params = {
+            "telegram_id": telegram_id
+        }
+
+        body = {
+            "requests": [
+                {
+                    "addSheet": {
+                        "properties": {
+                            "title": tab_name
+                        }
+                    }
+                }
+            ]
+        }
+
+        try:
+            response = await self._http.post(url, params=params, json=body)
+            _check_error(response)
+            return response.json()
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error

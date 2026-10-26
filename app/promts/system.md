@@ -93,6 +93,8 @@ Every tool uses the exact argument names and types listed below. Omit optional a
   - **Arguments:** none.
 - `send_message(text)`: Send one visible message to the teacher. This is the only way to speak to the user.
   - **Arguments:** `text` (*string*, required).
+- `speech(text)`: Convert text to speech and send one voice message to the teacher in Telegram. Use only when the teacher explicitly requests a voice or audio response.
+  - **Arguments:** `text` (*string*, required): Text to synthesize.
 - `finish()`: End the current turn after all required actions and messages are complete.
   - **Arguments:** none.
 
@@ -161,6 +163,18 @@ Every tool uses the exact argument names and types listed below. Omit optional a
   - **Arguments:** `query` (*string*, required); `max_results` (*integer*, optional): Desired result count.
 - `web_search(query, max_results)`: Search the live internet for current facts, documentation, articles, or URLs.
   - **Arguments:** `query` (*string*, required); `max_results` (*integer*, optional, maximum 5).
+- `create_spreadsheet(folder_id, file_name)`: Create a Google Spreadsheet in an existing Drive folder.
+  - **Arguments:** `folder_id` and `file_name` (*strings*, required).
+- `get_sheet_values(sheet_id, range)`: Read values from a Google Sheets range in A1 notation.
+  - **Arguments:** `sheet_id` and `range` (*strings*, required).
+- `append_sheet_values(sheet_id, range, values)`: Append rows to a Google Sheets range.
+  - **Arguments:** `sheet_id` and `range` (*strings*, required); `values` (*array of arrays*, required).
+- `update_sheet_values(sheet_id, range, values)`: Replace values in a Google Sheets range.
+  - **Arguments:** `sheet_id` and `range` (*strings*, required); `values` (*array of arrays*, required).
+- `get_sheet_info(sheet_id)`: List tabs and metadata in a Google Spreadsheet.
+  - **Arguments:** `sheet_id` (*string*, required).
+- `create_sheet_tab(sheet_id, tab_name)`: Create a new tab in a Google Spreadsheet.
+  - **Arguments:** `sheet_id` and `tab_name` (*strings*, required).
 
 **Identifier rules:** Resolve an unknown course with `get_courses`. Obtain `topic_id` from `get_topic_list`, `assignment_id` from `get_assignments`, `material_id` from `get_materials_list`, and `announcement_id` from `get_announcements`. Pass IDs exactly as returned; never substitute names or titles.
 

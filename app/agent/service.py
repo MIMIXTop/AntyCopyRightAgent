@@ -94,7 +94,10 @@ class AgentService:
                     chat_id,
                     Message("tool", result.content, call.id)
                 )
-                if result.terminal:
+                # Only the explicit finish tool may end the agent loop. Other
+                # tools can return status data such as a pending confirmation
+                # and the model must decide whether more actions are needed.
+                if result.terminal and call.name == "finish":
                     logger.info(
                         "Agent tool terminated flow: chat_id=%s tool=%s call_id=%s",
                         chat_id,

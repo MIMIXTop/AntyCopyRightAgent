@@ -1,11 +1,12 @@
 from app.tools.loader import load_schema
 from app.core.errors import ToolArgumentsError
+from app.agent.speech_service import SpeechService
 from app.api.telegram.service import TelegramService
 from app.agent.tools import ToolRegistry, ToolContext, ToolResult
 from app.core.logging import logger
 
 
-def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService):
+def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, speech_service: SpeechService):
     logger.info("Registering Telegram tools")
 
     async def send(context: ToolContext, args: dict):
@@ -17,4 +18,14 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService):
         await telegram.send_message(text=text, chat_id=context.chat_id)
         return ToolResult(context.call_id, '{"status":"delivered"}')
 
+    async def speech(context: ToolContext, args: dict):
+        logger.info("Speech tool called: chat_id=%s arguments=%s", context.chat_id, args)
+        text = args.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ToolArgumentsError("speech", "text is required")
+        voice = await speech_service.get_speech(text)
+        await telegram.send_speech(speech=voice, chat_id=context.chat_id)
+        return ToolResult(context.call_id, '{"status":"delivered"}')
+
     registry.register("send_message", send, load_schema("send_message"))
+    registry.register("speech", speech, load_schema("speech"))

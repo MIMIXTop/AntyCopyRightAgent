@@ -9,15 +9,21 @@ from app.agent.history import InMemoryHistoryStore
 from app.agent.llm import OpenAIAdapter
 from app.agent.models import Message, ToolContext, ToolResult
 from app.agent.service import AgentService
+from app.agent.speech_service import SpeechService
 from app.agent.tools import ToolRegistry
 from app.api.telegram.service import TelegramService
 from app.tools.loader import load_schema
 from app.api.classroom.client import ClassroomClient
 from app.api.classroom.service import ClassroomService
+from app.api.drive.client import DriveClient
+from app.api.sheets.client import SheetsClient
+from app.api.sheets.service import SheetsService
 from app.handlers.web_search import WebSearchService
 from app.registers.classroom import register_classroom_tools
 from app.registers.telegram import register_telegram_tools
 from app.registers.web_search import register_web_search
+from app.registers.sheets import register_sheets_tools
+from app.registers.drive import register_drive_tools
 from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
 from app.core.logging import configure_logging
@@ -60,12 +66,20 @@ async def build_application(settings: Settings) -> Application:
     web_service = WebSearchService(10)
 
     voice_service = VoiceService()
-    classroom = ClassroomService(ClassroomClient(http_client))
+    speech_service = SpeechService()
+    drive = DriveClient(http_client)
+    classroom = ClassroomService(
+        ClassroomClient(http_client),
+        drive_client=drive,
+    )
+    sheets = SheetsService(SheetsClient(http_client))
     telegram = TelegramService(bot)
     registry = ToolRegistry()
     register_classroom_tools(registry, classroom, telegram)
-    register_telegram_tools(registry, telegram)
+    register_telegram_tools(registry, telegram, speech_service)
     register_web_search(registry, web_service)
+    register_sheets_tools(registry, sheets)
+    register_drive_tools(registry, drive)
 
     async def current_time(context: ToolContext, arguments: dict):
         from app.handlers.get_current_time import get_current_time

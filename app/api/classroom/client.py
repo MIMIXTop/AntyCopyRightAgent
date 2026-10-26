@@ -1,10 +1,10 @@
 import httpx
 import logging
-import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from app.api.classroom.models import Course, CourseWork, StudentSubmission, Student, ResultRequest, Announcement, \
     CourseTopic, CourseMaterial
+from app.api.drive.client import DriveClient
 from app.core.errors import (
     ExternalServiceUnavailableError,
     InvalidUpstreamResponseError,
@@ -54,6 +54,23 @@ class ClassroomClient:
     def __init__(self, http: httpx.AsyncClient) -> None:
         self.http = http
         logger.info("ClassroomClient initialized")
+
+    async def upload_to_drive(
+        self,
+        telegram_id: int,
+        file_name: str,
+        content: bytes,
+        mime_type: str,
+        parent_folder_id: str | None = None,
+    ) -> dict:
+        """Compatibility wrapper; Drive transport lives in DriveClient."""
+        return await DriveClient(self.http).upload_to_drive(
+            telegram_id=telegram_id,
+            file_name=file_name,
+            content=content,
+            mime_type=mime_type,
+            parent_folder_id=parent_folder_id,
+        )
 
     async def get_concrete_course(self, telegram_id: int, course_id: int) -> Course:
         logger.info("ClassroomClient.get_concrete_course called: telegram_id=%s course_id=%s", telegram_id, course_id)
@@ -400,7 +417,13 @@ class ClassroomClient:
         try:
             res = await self.http.get(url, params=params)
             _check_error(res)
-            return self._parse_list(res, CourseTopic, "topic", "topics")
+            return self._parse_list(
+                res,
+                CourseTopic,
+                "topics",
+                ("topic", "topics"),
+                empty_body_is_empty=True,
+            )
         except httpx.RequestError as error:
             logger.error("Failed to connect to C++ server: %s", error)
             raise ExternalServiceUnavailableError("Classroom") from error
@@ -535,57 +558,6 @@ class ClassroomClient:
         return self._parse_list(res, Announcement, "announcements", "announcements")
 
 
-    async def upload_to_drive(
-            self,
-            telegram_id: int,
-            file_name: str,
-            content: bytes,
-            mime_type: str,
-            parent_folder_id: str | None = None,
-    ) -> dict:
-
-        url = f"{settings.CPP_SERVER_URL}/api/drive/upload"
-
-        params = {"telegram_id": telegram_id}
-
-        boundary = "foo_bar_baz_boundary"
-
-        metadata = {
-            "name": file_name,
-            "mimeType": mime_type,
-        }
-        if parent_folder_id:
-            metadata["parents"] = [parent_folder_id]
-
-        metadata_json = json.dumps(metadata)
-
-        body_bytes = (
-                         f"--{boundary}\r\n"
-                         f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
-                         f"{metadata_json}\r\n"
-                         f"--{boundary}\r\n"
-                         f"Content-Type: {mime_type}\r\n\r\n"
-                     ).encode("utf-8") + content + f"\r\n--{boundary}--\r\n".encode("utf-8")
-
-        headers = {
-            "Content-Type": f"multipart/related; boundary={boundary}"
-        }
-
-        try:
-            response = await self.http.post(
-                url,
-                params=params,
-                content=body_bytes,
-                headers=headers
-            )
-            _check_error(response)
-            result = response.json()
-            if not isinstance(result, dict) or not isinstance(result.get("id"), str):
-                raise InvalidUpstreamResponseError("Drive")
-            return result
-        except httpx.TimeoutException as error:
-            raise ExternalServiceUnavailableError from error
-
     async def get_course_materials(self, telegram_id: int, course_id):
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWorkMaterials"
         params = {"telegram_id": telegram_id}
@@ -671,15 +643,21 @@ class ClassroomClient:
             response: httpx.Response,
             model,
             resource: str,
-            payload_key: str,
+            payload_key: str | tuple[str, ...],
+            empty_body_is_empty: bool = False,
     ):
         try:
             body = response.json()
             if not isinstance(body, dict):
                 raise TypeError("response body must be a JSON object")
-            payload = body[payload_key]
+            if empty_body_is_empty and not body:
+                return []
+            keys = (payload_key,) if isinstance(payload_key, str) else payload_key
+            payload = next((body[key] for key in keys if key in body), None)
+            if payload is None:
+                raise KeyError(keys[0])
             if not isinstance(payload, list):
-                raise TypeError(f"{payload_key} must be a JSON array")
+                raise TypeError(f"{keys[0]} must be a JSON array")
             return [model.model_validate(item) for item in payload]
         except (KeyError, TypeError, ValueError) as error:
             logger.error(

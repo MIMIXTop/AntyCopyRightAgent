@@ -1,6 +1,7 @@
 import io
 
 from aiogram import Bot
+from aiogram.types import BufferedInputFile
 
 from app.core.errors import ApplicationError
 from app.api.telegram.keyboards import *
@@ -18,6 +19,11 @@ class TelegramService:
             chat_id=chat_id,
             text=text,
         )
+
+    async def send_speech(self, speech: bytes, chat_id: int):
+        logger.info("TelegramService.send_speech called: chat_id=%s bytes=%s", chat_id, len(speech))
+        voice = BufferedInputFile(speech, filename="voice.ogg")
+        await self._bot.send_voice(voice=voice, chat_id=chat_id)
 
     async def send_error(self, chat_id: int, error: ApplicationError):
         logger.error("TelegramService.send_error called: chat_id=%s error=%s", chat_id, error)
