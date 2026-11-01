@@ -611,6 +611,12 @@ class ClassroomClient:
         try:
             response = await self.http.post(url, params=params, json=body)
             _check_error(response)
+            try:
+                return CourseMaterial.model_validate(response.json())
+            except Exception:
+                # Some proxies return an empty/204 body on create; the caller
+                # can fall back to listing materials if it needs the object.
+                return None
         except httpx.RequestError as error:
             logger.error("Failed to connect to C++ server: %s", error)
             raise ExternalServiceUnavailableError("Classroom") from error
@@ -653,10 +659,28 @@ class ClassroomClient:
             "updateMask": ",".join(mask_fields)
         }
 
+        if materials is not None:
+            # courseWorkMaterials.patch rejects "materials" in the updateMask
+            # unless this preview parameter is sent (Google API limitation).
+            # Note: Google replaces the whole materials list with the payload,
+            # so callers must merge current resources before calling this.
+            params["previewVersion"] = "PREVIEW_VERSION_9001"
+
         try:
             response = await self.http.patch(url, params=params, json=body)
             _check_error(response)
             return CourseMaterial.model_validate(response.json())
+        except httpx.RequestError as error:
+            logger.error("Failed to connect to C++ server: %s", error)
+            raise ExternalServiceUnavailableError("Classroom") from error
+
+    async def delete_course_material(self, telegram_id: int, course_id: str, material_id: str):
+        url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWorkMaterials/{material_id}"
+        params = {"telegram_id": telegram_id}
+
+        try:
+            response = await self.http.delete(url, params=params)
+            _check_error(response)
         except httpx.RequestError as error:
             logger.error("Failed to connect to C++ server: %s", error)
             raise ExternalServiceUnavailableError("Classroom") from error

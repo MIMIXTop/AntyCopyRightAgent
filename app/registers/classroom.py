@@ -648,13 +648,12 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         topic_id = args.get("topic_id")
         links = args.get("links")
         drive_file_ids = args.get("drive_file_ids")
+        telegram_attachments = context.attachments
 
         if not isinstance(course_id, str) or not course_id.strip():
             raise ToolArgumentsError("update_material", "course_id is required and must be a non-empty string")
         if not isinstance(material_id, str) or not material_id.strip():
             raise ToolArgumentsError("update_material", "material_id is required and must be a non-empty string")
-        if all(value is None for value in (title, description, topic_id, links, drive_file_ids)):
-            raise ToolArgumentsError("update_material", "At least one field to update must be provided")
         if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
             raise ToolArgumentsError("update_material", "topic_id must be a non-empty string")
 
@@ -671,6 +670,14 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
                 {"driveFile": {"driveFile": {"id": file_id}, "shareMode": "VIEW"}}
                 for file_id in drive_file_ids
             )
+            # An empty resource list means "no change": sending an empty
+            # materials array with a materials updateMask makes Google reject
+            # the whole PATCH request.
+            if not materials:
+                materials = None
+
+        if all(value is None for value in (title, description, topic_id, materials)) and not telegram_attachments:
+            raise ToolArgumentsError("update_material", "At least one field to update must be provided")
 
         pending_id = classroom.hold_update(
             "material",
@@ -681,16 +688,21 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             description=description,
             materials=materials,
             topic_id=topic_id,
+            telegram_attachments=telegram_attachments,
         )
+
+        changes = {
+            "title": title,
+            "description": description,
+            "topic_id": topic_id,
+        }
+        if telegram_attachments:
+            changes["files"] = f"{len(telegram_attachments)} файл(ов) из Telegram"
 
         await telegram.request_course_material_update(
             chat_id=context.chat_id,
             pending_id=pending_id,
-            changes={
-                "title": title,
-                "description": description,
-                "topic_id": topic_id,
-            }
+            changes=changes
         )
 
         return ToolResult(

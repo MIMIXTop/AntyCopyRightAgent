@@ -12,12 +12,72 @@ from app.agent.voice_service import VoiceService
 from app.core.errors import ApplicationError
 from app.core.logging import logger
 from app.api.telegram.keyboards import get_auth_keyboard
+from app.api.telegram.media_groups import MediaGroupBuffer
 
 
 def create_router(
     agent: AgentService, bot: Bot, voice_service: VoiceService, error_presenter
 ) -> Router:
     router = Router()
+
+    async def _process_media_group(parts: list[TgMessage]) -> None:
+        """Handle an entire album as a single agent turn with all attachments."""
+        attachments: list[TelegramAttachment] = []
+        caption: str | None = None
+        first_message = parts[0]
+
+        for part in parts:
+            if caption is None and part.caption:
+                caption = part.caption
+            if part.from_user is None:
+                continue
+            if part.document is not None:
+                document_io = io.BytesIO()
+                await bot.download(part.document, document_io)
+                attachments.append(
+                    TelegramAttachment(
+                        file_id=part.document.file_id,
+                        file_name=part.document.file_name,
+                        mime_type=part.document.mime_type,
+                        size=part.document.file_size,
+                        data=document_io.getvalue(),
+                    )
+                )
+            elif part.photo:
+                photo = part.photo[-1]
+                attachments.append(
+                    TelegramAttachment(
+                        file_id=photo.file_id,
+                        file_name=f"photo_{photo.file_unique_id}.jpg",
+                        mime_type="image/jpeg",
+                        size=photo.file_size,
+                        kind="photo",
+                    )
+                )
+
+        if not attachments or first_message.from_user is None:
+            logger.info(
+                "Media group skipped: no processable attachments parts=%s",
+                len(parts),
+            )
+            return
+
+        text = caption or f"Пользователь отправил файлы ({len(attachments)} шт.)."
+        try:
+            answer = await agent.handle(
+                chat_id=first_message.chat.id,
+                user_id=first_message.from_user.id,
+                text=text,
+                attachments=attachments,
+            )
+        except ApplicationError as error:
+            await error_presenter.send_error(first_message.chat.id, error)
+            return
+
+        if answer:
+            await first_message.answer(answer)
+
+    media_groups = MediaGroupBuffer(_process_media_group)
 
     @router.message(Command("auth"))
     async def auth(message: TgMessage):
@@ -52,15 +112,31 @@ def create_router(
         if answer:
             await message.answer(answer)
 
+    # Registered before the single-document/photo handlers so every album part
+    # (each part carries media_group_id) is consumed here and processed as one
+    # batch instead of spawning a parallel agent run per file.
+    @router.message(F.media_group_id)
+    async def handle_media_group(message: TgMessage):
+        if message.from_user is None:
+            return
+        if message.document is None and not message.photo:
+            return
+        await media_groups.add(message)
+
     @router.message(F.document)
     async def handle_document_message(message: TgMessage):
         if message.from_user is None or message.document is None:
+            return
+        if message.media_group_id:
+            # Handled by handle_media_group above.
             return
 
         doc = message.document
         caption = message.caption or "Пользователь отправил файл."
 
         text_for_agent = caption
+        document_io = io.BytesIO()
+        await bot.download(doc, document_io)
 
         try:
             answer = await agent.handle(
@@ -73,6 +149,7 @@ def create_router(
                         file_name=doc.file_name,
                         mime_type=doc.mime_type,
                         size=doc.file_size,
+                        data=document_io.getvalue(),
                     )
                 ],
             )
@@ -113,6 +190,9 @@ def create_router(
     @router.message(F.photo)
     async def handle_photo_message(message: TgMessage):
         if message.from_user is None or not message.photo:
+            return
+        if message.media_group_id:
+            # Handled by handle_media_group above.
             return
 
         photo = message.photo[-1]

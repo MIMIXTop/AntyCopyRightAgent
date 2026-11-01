@@ -5,7 +5,7 @@ import httpx
 
 from app.api.classroom.client import ClassroomClient
 from app.api.drive.client import DriveClient
-from app.core.errors import ValidationError
+from app.core.errors import UpstreamServiceError, ValidationError
 from app.core.logging import logger
 
 
@@ -593,16 +593,90 @@ class ClassroomService:
         if description is not None and len(description) > 30_000:
             raise ValidationError("Material description is too long")
 
-        result = await self.client.update_course_material(
+        try:
+            return await self.client.update_course_material(
+                telegram_id=telegram_id,
+                course_id=course_id,
+                material_id=material_id,
+                title=title,
+                description=description,
+                materials=materials,
+                topic_id=topic_id
+            )
+        except UpstreamServiceError as error:
+            # Google refuses to change "materials" on a PUBLISHED course work
+            # material even with previewVersion=PREVIEW_VERSION_9001. The only
+            # supported way to attach files in that case is to recreate the
+            # material: create a new one with the merged list, then delete old.
+            if materials is None or not self._is_material_update_rejected(error):
+                raise
+            logger.warning(
+                "Direct material update rejected (status=%s); recreating material %s",
+                error.status_code, material_id,
+            )
+            return await self._recreate_material(
+                telegram_id=telegram_id,
+                course_id=course_id,
+                material_id=material_id,
+                title=title,
+                description=description,
+                materials=materials,
+                topic_id=topic_id,
+            )
+
+    @staticmethod
+    def _is_material_update_rejected(error: UpstreamServiceError) -> bool:
+        # "materials" changes on PUBLISHED items come back as a client error
+        # (400/409/412); anything else (401/403/5xx) must propagate unchanged.
+        return error.status_code in (400, 409, 412)
+
+    async def _recreate_material(
+        self,
+        telegram_id: int,
+        course_id: str,
+        material_id: str,
+        title: str | None,
+        description: str | None,
+        materials: list[dict],
+        topic_id: str | None,
+    ):
+        # Recreating needs a title (required by create); reuse the current
+        # material's values for any field the caller left empty.
+        current_list = await self.client.get_course_materials(telegram_id, course_id)
+        current = next((item for item in current_list if item.id == material_id), None)
+
+        effective_title = title or (current.title if current else None)
+        if not effective_title:
+            raise ValidationError("Material title is required to recreate the material")
+
+        new_material = await self.client.create_course_material(
             telegram_id=telegram_id,
             course_id=course_id,
-            material_id=material_id,
-            title=title,
-            description=description,
             materials=materials,
-            topic_id=topic_id
+            title=effective_title,
+            description=description if description is not None else (current.description if current else None),
+            topic_id=topic_id or (current.topic_id if current else None),
         )
-        return result
+
+        try:
+            await self.client.delete_course_material(telegram_id, course_id, material_id)
+        except UpstreamServiceError as error:
+            # The new material is already in place; a failed delete only leaves
+            # a duplicate, which is better than losing the user's files.
+            logger.error(
+                "Failed to delete old material %s after recreate: status=%s",
+                material_id, error.status_code,
+            )
+        return new_material
+
+    async def delete_course_material(self, telegram_id: int, course_id: str, material_id: str):
+        logger.info("ClassroomService.delete_course_material called: telegram_id=%s course_id=%s material_id=%s", telegram_id, course_id, material_id)
+        self._validate_telegram_id(telegram_id)
+        if not isinstance(course_id, str) or not course_id.strip():
+            raise ValidationError("Course ID is required")
+        if not isinstance(material_id, str) or not material_id.strip():
+            raise ValidationError("Material ID is required")
+        return await self.client.delete_course_material(telegram_id, course_id, material_id)
 
     @staticmethod
     def _validate_telegram_id(telegram_id: int) -> None:

@@ -170,3 +170,59 @@ def get_choice_keyboard(choice_id: str, options: list[dict[str, str]]) -> Inline
             for index, option in enumerate(options)
         ]
     )
+
+
+def get_form_create_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"form:create:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"form:create:cancel:{pending_id}",
+            )
+        ]]
+    )
+
+
+def get_form_question_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"form:question:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"form:question:cancel:{pending_id}",
+            )
+        ]]
+    )
+
+
+def get_form_publish_keyboard(pending_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Подтвердить",
+                callback_data=f"form:publish:confirm:{pending_id}",
+            ),
+            InlineKeyboardButton(
+                text="Отменить",
+                callback_data=f"form:publish:cancel:{pending_id}",
+            )
+        ]]
+    )
+
+
+def get_form_link_keyboard(url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="Открыть форму",
+                url=url,
+            )
+        ]]
+    )

@@ -16,14 +16,19 @@ from app.tools.loader import load_schema
 from app.api.classroom.client import ClassroomClient
 from app.api.classroom.service import ClassroomService
 from app.api.drive.client import DriveClient
+from app.api.forms.client import FormsClient
+from app.api.forms.service import FormsService
 from app.api.sheets.client import SheetsClient
 from app.api.sheets.service import SheetsService
 from app.handlers.web_search import WebSearchService
 from app.registers.classroom import register_classroom_tools
+from app.registers.forms import register_forms_tools
 from app.registers.telegram import register_telegram_tools
 from app.registers.web_search import register_web_search
 from app.registers.sheets import register_sheets_tools
 from app.registers.drive import register_drive_tools
+from app.registers.document_view import register_document_views
+from app.agent.document_view_service import DocumentViewService
 from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
 from app.core.logging import configure_logging
@@ -73,6 +78,7 @@ async def build_application(settings: Settings) -> Application:
         drive_client=drive,
     )
     sheets = SheetsService(SheetsClient(http_client))
+    forms = FormsService(FormsClient(http_client))
     telegram = TelegramService(bot)
     registry = ToolRegistry()
     register_classroom_tools(registry, classroom, telegram)
@@ -80,6 +86,8 @@ async def build_application(settings: Settings) -> Application:
     register_web_search(registry, web_service)
     register_sheets_tools(registry, sheets)
     register_drive_tools(registry, drive)
+    register_forms_tools(registry, forms, telegram)
+    register_document_views(registry, DocumentViewService())
 
     async def current_time(context: ToolContext, arguments: dict):
         from app.handlers.get_current_time import get_current_time
@@ -119,6 +127,7 @@ async def build_application(settings: Settings) -> Application:
             history_store=storage,
             telegram=telegram,
             agent=agent,
+            forms=forms,
         )
     )
     logger.info("Application bootstrap completed")
