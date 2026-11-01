@@ -1,0 +1,12 @@
+.venv
+.idea
+.github
+.env
+.pytest_cache
+**/__pycache__
+tests/
+README.md
+uv.lock
+.python-version
+Procfile
+.git
