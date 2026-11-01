@@ -1,0 +1,40 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_material",
+    "description": "Creates a Google Classroom course material after user confirmation. Materials may contain web links, existing Drive files, or Telegram attachments.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Material title."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional material description."
+        },
+        "links": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "description": "Web URLs to attach."
+        },
+        "drive_file_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Existing Google Drive file IDs to attach."
+        },
+        "topic_id": {
+          "type": "string",
+          "description": "Existing topic ID where the material should be placed. Obtain it from get_topic_list."
+        }
+      },
+      "required": ["course_id", "title"],
+      "additionalProperties": false
+    }
+  }
+}

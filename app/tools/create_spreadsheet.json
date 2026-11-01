@@ -1,0 +1,16 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_spreadsheet",
+    "description": "Creates a Google Spreadsheet inside an existing Google Drive folder.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "folder_id": {"type": "string", "minLength": 1, "description": "Google Drive folder ID."},
+        "file_name": {"type": "string", "minLength": 1, "description": "Name of the new spreadsheet."}
+      },
+      "required": ["folder_id", "file_name"],
+      "additionalProperties": false
+    }
+  }
+}

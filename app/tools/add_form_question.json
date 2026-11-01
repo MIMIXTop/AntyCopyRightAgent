@@ -1,0 +1,33 @@
+{
+  "type": "function",
+  "function": {
+    "name": "add_form_question",
+    "description": "Add one question to an existing Google Forms form. The tool asks for explicit Telegram confirmation before adding the question.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "form_id": {"type": "string", "minLength": 1, "description": "Exact form ID returned by create_form or get_form."},
+        "title": {"type": "string", "minLength": 1, "description": "Question text."},
+        "type": {
+          "type": "string",
+          "enum": ["radio", "checkbox", "dropdown", "short_text", "long_text"],
+          "description": "radio/checkbox/dropdown require options; short_text/long_text are free-text answers."
+        },
+        "options": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Answer options. Required and non-empty for radio/checkbox/dropdown; must be omitted for text questions."
+        },
+        "correct_answers": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "description": "Correct answers for quiz mode. For choice questions each value must exactly match one of options."
+        },
+        "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Required together with correct_answers (defaults to 1)."},
+        "required": {"type": "boolean", "description": "Whether the respondent must answer this question."}
+      },
+      "required": ["form_id", "title", "type"],
+      "additionalProperties": false
+    }
+  }
+}

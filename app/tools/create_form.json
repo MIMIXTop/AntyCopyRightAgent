@@ -1,0 +1,46 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_form",
+    "description": "Create a Google Forms form (optionally a graded quiz) with questions. The tool asks for explicit Telegram confirmation before creating anything. After confirmation the created form_id and responder link arrive in an action_result event.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "description": "Form title shown to respondents."},
+        "description": {"type": "string", "description": "Optional form description."},
+        "is_quiz": {"type": "boolean", "description": "True to enable quiz mode with grading (correct answers and points)."},
+        "questions": {
+          "type": "array",
+          "description": "Optional list of questions to add to the new form.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string", "minLength": 1, "description": "Question text."},
+              "type": {
+                "type": "string",
+                "enum": ["radio", "checkbox", "dropdown", "short_text", "long_text"],
+                "description": "radio/checkbox/dropdown require options; short_text/long_text are free-text answers."
+              },
+              "options": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Answer options. Required and non-empty for radio/checkbox/dropdown; must be omitted for text questions."
+              },
+              "correct_answers": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "description": "Correct answers for quiz mode. For choice questions each value must exactly match one of options."
+              },
+              "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Required together with correct_answers (defaults to 1)."},
+              "required": {"type": "boolean", "description": "Whether the respondent must answer this question."}
+            },
+            "required": ["title", "type"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_sheet_info",
+    "description": "Lists existing pages/tabs and their metadata in a Google Spreadsheet. Use this to show the teacher the exact tab names; never invent a tab name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sheet_id": {"type": "string", "minLength": 1, "description": "Google Spreadsheet ID."}
+      },
+      "required": ["sheet_id"],
+      "additionalProperties": false
+    }
+  }
+}
