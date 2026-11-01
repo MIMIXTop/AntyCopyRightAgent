@@ -1,0 +1,33 @@
+{
+  "type": "function",
+  "function": {
+    "name": "ask_choice",
+    "description": "Asks the teacher to choose exactly one option using an inline keyboard. Use this whenever a destination, spreadsheet, page, tab, action, or other value is ambiguous. Never invent an option value.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short question shown above the buttons."
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {"type": "string", "minLength": 1, "description": "Button text."},
+              "value": {"type": "string", "minLength": 1, "description": "Exact value returned to the agent; never invent it."}
+            },
+            "required": ["label", "value"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["question", "options"],
+      "additionalProperties": false
+    }
+  }
+}

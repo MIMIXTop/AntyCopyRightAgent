@@ -177,3 +177,57 @@ async def test_client_patch_course_sends_course_state():
 
     assert requests[0].url.params["updateMask"] == "courseState"
     assert json.loads(requests[0].content) == {"courseState": "ARCHIVED"}
+
+
+@pytest.mark.asyncio
+async def test_update_material_with_materials_sends_preview_version():
+    requests = []
+
+    def mock_handler(request: httpx.Request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"courseId": "course-1", "id": "material-1", "title": "Лекции"},
+        )
+
+    client = ClassroomClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    )
+    await client.update_course_material(
+        telegram_id=42,
+        course_id="course-1",
+        material_id="material-1",
+        title="Лекции",
+        materials=[{"driveFile": {"driveFile": {"id": "file-1"}, "shareMode": "VIEW"}}],
+    )
+
+    params = requests[0].url.params
+    assert set(params["updateMask"].split(",")) == {"title", "materials"}
+    # Google rejects the "materials" updateMask without this preview parameter.
+    assert params["previewVersion"] == "PREVIEW_VERSION_9001"
+
+
+@pytest.mark.asyncio
+async def test_update_material_without_materials_omits_preview_version():
+    requests = []
+
+    def mock_handler(request: httpx.Request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"courseId": "course-1", "id": "material-1", "title": "New title"},
+        )
+
+    client = ClassroomClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    )
+    await client.update_course_material(
+        telegram_id=42,
+        course_id="course-1",
+        material_id="material-1",
+        title="New title",
+    )
+
+    params = requests[0].url.params
+    assert params["updateMask"] == "title"
+    assert "previewVersion" not in params

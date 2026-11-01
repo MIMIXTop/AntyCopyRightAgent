@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "function": {
+    "name": "speech",
+    "description": "Converts text to a Russian voice message and sends it to the teacher in Telegram. Use only when the teacher explicitly asks for a voice or audio response.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Text to synthesize and send as a voice message."
+        }
+      },
+      "required": ["text"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_sheet_tab",
+    "description": "Renames an existing Google Spreadsheet tab. Use the exact tab_id returned by get_sheet_info and the new name explicitly provided or confirmed by the teacher. Never invent tab_id or tab_name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sheet_id": {"type": "string", "minLength": 1, "description": "Google Spreadsheet ID."},
+        "tab_id": {"type": "string", "pattern": "^[0-9]+$", "description": "Numeric tab ID returned by get_sheet_info."},
+        "tab_name": {"type": "string", "minLength": 1, "description": "New tab name explicitly provided or confirmed by the teacher."}
+      },
+      "required": ["sheet_id", "tab_id", "tab_name"],
+      "additionalProperties": false
+    }
+  }
+}

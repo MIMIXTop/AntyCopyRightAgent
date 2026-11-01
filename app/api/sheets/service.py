@@ -38,3 +38,13 @@ class SheetsService:
         self._validate_id(sheet_id, "Sheet ID")
         self._validate_id(tab_name, "Tab name")
         return await self._client.create_sheet_tab(telegram_id, sheet_id, tab_name)
+
+    async def update_tab(self, telegram_id: int, sheet_id: str, tab_id: str, tab_name: str):
+        self._validate_id(sheet_id, "Sheet ID")
+        self._validate_id(tab_id, "Tab ID")
+        self._validate_id(tab_name, "Tab name")
+        try:
+            int(tab_id)
+        except ValueError as error:
+            raise ValidationError("Tab ID must be an integer returned by get_sheet_info") from error
+        return await self._client.update_sheet_tab(telegram_id, sheet_id, tab_id, tab_name)

@@ -179,3 +179,33 @@ class SheetsClient:
             return response.json()
         except httpx.RequestError as error:
             raise ExternalServiceUnavailableError("Sheets") from error
+
+    async def update_sheet_tab(
+        self,
+        telegram_id: int,
+        sheet_id: str,
+        tab_id: str,
+        tab_name: str,
+    ):
+        url = f"{settings.CPP_SERVER_URL}/api/sheets/{sheet_id}:batchUpdate"
+        body = {
+            "requests": [{
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": int(tab_id),
+                        "title": tab_name,
+                    },
+                    "fields": "title",
+                }
+            }]
+        }
+        try:
+            response = await self._http.post(
+                url,
+                params={"telegram_id": telegram_id},
+                json=body,
+            )
+            _check_error(response)
+            return response.json()
+        except httpx.RequestError as error:
+            raise ExternalServiceUnavailableError("Sheets") from error

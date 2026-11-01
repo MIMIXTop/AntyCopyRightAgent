@@ -1,0 +1,16 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_sheet_values",
+    "description": "Reads values from a Google Sheets range.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sheet_id": {"type": "string", "minLength": 1, "description": "Google Spreadsheet ID."},
+        "range": {"type": "string", "minLength": 1, "description": "Exact existing tab name plus A1 range, for example 'Grades'!A1:C10. Never invent the tab name."}
+      },
+      "required": ["sheet_id", "range"],
+      "additionalProperties": false
+    }
+  }
+}

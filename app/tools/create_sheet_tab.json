@@ -1,0 +1,16 @@
+{
+  "type": "function",
+  "function": {
+    "name": "create_sheet_tab",
+    "description": "Creates a new tab only with the exact tab name explicitly provided or confirmed by the teacher. Never invent a tab name.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sheet_id": {"type": "string", "minLength": 1, "description": "Google Spreadsheet ID."},
+        "tab_name": {"type": "string", "minLength": 1, "description": "New tab name."}
+      },
+      "required": ["sheet_id", "tab_name"],
+      "additionalProperties": false
+    }
+  }
+}

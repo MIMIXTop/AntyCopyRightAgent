@@ -1,0 +1,15 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_form_responses",
+    "description": "Retrieve student responses submitted to a Google Forms form.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "form_id": {"type": "string", "minLength": 1, "description": "Exact form ID returned by create_form or a previous tool result."}
+      },
+      "required": ["form_id"],
+      "additionalProperties": false
+    }
+  }
+}

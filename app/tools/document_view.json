@@ -1,0 +1,21 @@
+{
+  "type": "function",
+  "function": {
+    "name": "document_view",
+    "description": "Converts a PDF or PPTX document to Markdown so you can read and analyze its contents. Use a URL for a document available online, or omit url when the teacher attached a PDF/PPTX file in the current message. Do not invent URLs or file names.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "HTTP(S) URL of the PDF or PPTX document. Use only a URL provided by the teacher or returned by another tool."
+        },
+        "file_name": {
+          "type": "string",
+          "description": "Exact name of an attached PDF/PPTX file when more than one supported document is attached."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

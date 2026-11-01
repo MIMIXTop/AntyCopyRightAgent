@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_materials_list",
+    "description": "Retrieves course materials from a Google Classroom course, including links and attached Drive or YouTube resources.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID."
+        }
+      },
+      "required": ["course_id"],
+      "additionalProperties": false
+    }
+  }
+}

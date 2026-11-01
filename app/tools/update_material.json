@@ -1,0 +1,44 @@
+{
+  "type": "function",
+  "function": {
+    "name": "update_material",
+    "description": "Updates a Google Classroom course material after user confirmation. Set topic_id to move it to another topic.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "course_id": {
+          "type": "string",
+          "description": "Unique Google Classroom course ID."
+        },
+        "material_id": {
+          "type": "string",
+          "description": "Unique course material ID obtained from get_materials_list."
+        },
+        "title": {
+          "type": "string",
+          "description": "New material title."
+        },
+        "description": {
+          "type": "string",
+          "description": "New material description."
+        },
+        "links": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "description": "Replacement list of web links."
+        },
+        "drive_file_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Replacement list of Google Drive file IDs."
+        },
+        "topic_id": {
+          "type": "string",
+          "description": "Existing topic ID. Set it to move the material to that topic."
+        }
+      },
+      "required": ["course_id", "material_id"],
+      "additionalProperties": false
+    }
+  }
+}

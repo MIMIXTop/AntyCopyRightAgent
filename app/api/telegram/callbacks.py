@@ -3,6 +3,7 @@ from aiogram.types import CallbackQuery
 
 from app.agent.models import Message
 from app.api.classroom.service import ClassroomService
+from app.api.forms.service import FormsService
 from app.core.errors import ApplicationError
 from app.core.logging import logger
 from app.core.types import HistoryStore
@@ -16,6 +17,7 @@ def create_callback_router(
     history_store: HistoryStore,
     telegram: TelegramService,
     agent: AgentService | None = None,
+    forms: FormsService | None = None,
 ) -> Router:
     router = Router()
 
@@ -445,13 +447,59 @@ def create_callback_router(
                 )
                 message = "✅ Раздел успешно изменён."
             elif resource == "material":
+                materials_payload = data.get("materials")
+                attachments = data.get("telegram_attachments") or []
+
+                if materials_payload is not None or attachments:
+                    # Resources are merged with the material's current list so
+                    # adding new files never wipes previously attached links.
+                    current_list = await classroom.get_course_materials_list(
+                        data["telegram_id"], data["course_id"]
+                    )
+                    current = next(
+                        (
+                            item for item in current_list
+                            if item.id == data["material_id"]
+                        ),
+                        None,
+                    )
+                    merged: list[dict] = []
+                    if current is not None:
+                        merged = [
+                            item.model_dump(mode="json", by_alias=True, exclude_none=True)
+                            for item in current.materials
+                        ]
+                    merged.extend(materials_payload or [])
+
+                    if attachments:
+                        course = await classroom.get_concrete_course(
+                            data["telegram_id"], data["course_id"]
+                        )
+                        folder_id = course.teacher_folder.id if course.teacher_folder else None
+                        for attachment in attachments:
+                            file_name, file_bytes = await telegram.get_file_content(attachment.file_id)
+                            drive_file = await classroom.upload_to_drive(
+                                telegram_id=data["telegram_id"],
+                                file_name=attachment.file_name or file_name,
+                                content=file_bytes,
+                                mime_type=attachment.mime_type or "application/octet-stream",
+                                parent_folder_id=folder_id,
+                            )
+                            merged.append({
+                                "driveFile": {
+                                    "driveFile": {"id": drive_file["id"]},
+                                    "shareMode": "VIEW",
+                                }
+                            })
+                    materials_payload = merged
+
                 await classroom.update_course_material(
                     telegram_id=data["telegram_id"],
                     course_id=data["course_id"],
                     material_id=data["material_id"],
                     title=data["title"],
                     description=data["description"],
-                    materials=data.get("materials"),
+                    materials=materials_payload,
                     topic_id=data.get("topic_id"),
                 )
                 message = "✅ Материал успешно изменён."
@@ -538,5 +586,224 @@ def create_callback_router(
     @router.callback_query(F.data.startswith("course:material:update:cancel:"))
     async def cancel_material_update(call: CallbackQuery):
         await cancel_update(call, call.data.split(":")[-1], "material")
+
+    if forms is not None:
+
+        @router.callback_query(F.data.startswith("form:create:confirm:"))
+        async def confirm_form_creation(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            logger.info("Form creation confirmation callback: pending_id=%s", pending_id)
+            data = forms.get_pending_form(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+
+            await call.answer()
+            await call.message.edit_text("⏳ Создаю форму...")
+            try:
+                form = await forms.create_form_with_questions(
+                    telegram_id=data["telegram_id"],
+                    title=data["title"],
+                    description=data["description"],
+                    is_quiz=data["is_quiz"],
+                    questions=data["questions"],
+                )
+                responder_uri = form.responder_uri
+
+                await call.message.edit_text(f"✅ Форма *«{data['title']}»* успешно создана!")
+                if responder_uri:
+                    await telegram.send_form_link(
+                        chat_id=call.message.chat.id,
+                        title=data["title"],
+                        responder_uri=responder_uri,
+                    )
+
+                await history_store.append(
+                    call.message.chat.id,
+                    Message(
+                        "system",
+                        f"Пользователь подтвердил создание формы '{data['title']}'. "
+                        f"Форма создана: form_id={form.form_id}, ссылка={responder_uri}. "
+                        f"Сообщи преподавателю результат и предложи опубликовать её или прикрепить к курсу.",
+                    ),
+                )
+                await notify_agent(
+                    call,
+                    "create_form",
+                    "confirmed",
+                    True,
+                    json.dumps(
+                        {
+                            "form_id": form.form_id,
+                            "title": data["title"],
+                            "responder_uri": responder_uri,
+                            "is_quiz": data["is_quiz"],
+                            "questions_added": len(data["questions"]),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except ApplicationError as error:
+                logger.error("Form creation failed: %s", error)
+                await call.message.edit_text("❌ Не удалось создать форму.")
+                await history_store.append(
+                    call.message.chat.id,
+                    Message("system", f"Создание формы не выполнено: {error}"),
+                )
+                await notify_agent(call, "create_form", "confirmed", False, str(error))
+            finally:
+                forms.remove_pending_form(pending_id)
+
+        @router.callback_query(F.data.startswith("form:create:cancel:"))
+        async def cancel_form_creation(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            data = forms.get_pending_form(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+            await call.answer()
+            await call.message.edit_text(f"❌ Создание формы *«{data['title']}»* отменено.")
+            await history_store.append(
+                call.message.chat.id,
+                Message("system", f"Пользователь ОТМЕНИЛ создание формы '{data['title']}'."),
+            )
+            await notify_agent(
+                call,
+                "create_form",
+                "cancelled",
+                False,
+                f"Создание формы '{data['title']}' отменено.",
+            )
+            forms.remove_pending_form(pending_id)
+
+        @router.callback_query(F.data.startswith("form:question:confirm:"))
+        async def confirm_form_question(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            logger.info("Form question confirmation callback: pending_id=%s", pending_id)
+            data = forms.get_pending_question(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+
+            await call.answer()
+            await call.message.edit_text("⏳ Добавляю вопрос...")
+            try:
+                await forms.add_question(
+                    telegram_id=data["telegram_id"],
+                    form_id=data["form_id"],
+                    question_spec=data["question"],
+                )
+                await call.message.edit_text("✅ Вопрос успешно добавлен.")
+                await history_store.append(
+                    call.message.chat.id,
+                    Message(
+                        "system",
+                        f"Пользователь подтвердил добавление вопроса '{data['question']['title']}' "
+                        f"в форму '{data['form_title']}' (form_id={data['form_id']}).",
+                    ),
+                )
+                await notify_agent(
+                    call,
+                    "add_form_question",
+                    "confirmed",
+                    True,
+                    json.dumps(
+                        {
+                            "form_id": data["form_id"],
+                            "question_title": data["question"]["title"],
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except ApplicationError as error:
+                logger.error("Form question addition failed: %s", error)
+                await call.message.edit_text("❌ Не удалось добавить вопрос.")
+                await notify_agent(call, "add_form_question", "confirmed", False, str(error))
+            finally:
+                forms.remove_pending_question(pending_id)
+
+        @router.callback_query(F.data.startswith("form:question:cancel:"))
+        async def cancel_form_question(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            data = forms.get_pending_question(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+            await call.answer()
+            await call.message.edit_text("❌ Добавление вопроса отменено.")
+            await notify_agent(call, "add_form_question", "cancelled", False, "Добавление вопроса отменено.")
+            forms.remove_pending_question(pending_id)
+
+        @router.callback_query(F.data.startswith("form:publish:confirm:"))
+        async def confirm_form_publish(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            logger.info("Form publish confirmation callback: pending_id=%s", pending_id)
+            data = forms.get_pending_publish(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+
+            await call.answer()
+            await call.message.edit_text("⏳ Публикую форму...")
+            try:
+                await forms.publish_form(
+                    telegram_id=data["telegram_id"],
+                    form_id=data["form_id"],
+                )
+                responder_uri = None
+                try:
+                    form = await forms.get_form(data["telegram_id"], data["form_id"])
+                    responder_uri = form.responder_uri
+                except ApplicationError:
+                    logger.warning("Failed to refresh form after publish: form_id=%s", data["form_id"])
+
+                await call.message.edit_text(f"✅ Форма *«{data['form_title']}»* опубликована!")
+                if responder_uri:
+                    await telegram.send_form_link(
+                        chat_id=call.message.chat.id,
+                        title=data["form_title"],
+                        responder_uri=responder_uri,
+                    )
+
+                await history_store.append(
+                    call.message.chat.id,
+                    Message(
+                        "system",
+                        f"Пользователь подтвердил публикацию формы '{data['form_title']}' "
+                        f"(form_id={data['form_id']}). Ссылка: {responder_uri}.",
+                    ),
+                )
+                await notify_agent(
+                    call,
+                    "publish_form",
+                    "confirmed",
+                    True,
+                    json.dumps(
+                        {
+                            "form_id": data["form_id"],
+                            "title": data["form_title"],
+                            "responder_uri": responder_uri,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            except ApplicationError as error:
+                logger.error("Form publish failed: %s", error)
+                await call.message.edit_text("❌ Не удалось опубликовать форму.")
+                await notify_agent(call, "publish_form", "confirmed", False, str(error))
+            finally:
+                forms.remove_pending_publish(pending_id)
+
+        @router.callback_query(F.data.startswith("form:publish:cancel:"))
+        async def cancel_form_publish(call: CallbackQuery):
+            pending_id = call.data.split(":")[-1]
+            data = forms.get_pending_publish(pending_id)
+            if not data or data["telegram_id"] != call.from_user.id:
+                await call.answer("Данные устарели", show_alert=True)
+                return
+            await call.answer()
+            await call.message.edit_text("❌ Публикация формы отменена.")
+            await notify_agent(call, "publish_form", "cancelled", False, "Публикация формы отменена.")
+            forms.remove_pending_publish(pending_id)
 
     return router

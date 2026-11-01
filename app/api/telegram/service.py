@@ -197,6 +197,113 @@ class TelegramService:
             reply_markup=get_update_course_material_keyboard(pending_id=pending_id),
         )
 
+    _QUESTION_TYPE_LABELS = {
+        "radio": "Выбор одного варианта",
+        "checkbox": "Выбор нескольких вариантов",
+        "dropdown": "Выпадающий список",
+        "short_text": "Короткий ответ",
+        "long_text": "Развёрнутый ответ",
+    }
+
+    @classmethod
+    def _format_question_summary(cls, question: dict) -> str:
+        lines = [f"• {question['title']}"]
+        question_type = question.get("type", "")
+        type_label = cls._QUESTION_TYPE_LABELS.get(question_type, question_type)
+        lines.append(f"  Тип: {type_label}")
+        options = question.get("options") or []
+        if options:
+            shown = options[:8]
+            suffix = f" …ещё {len(options) - 8}" if len(options) > 8 else ""
+            lines.append("  Варианты: " + "; ".join(shown) + suffix)
+        correct = question.get("correct_answers") or []
+        if correct:
+            points = question.get("points") or 1
+            lines.append(f"  Верный ответ: {'; '.join(correct)} (+{points} балл.)")
+        if question.get("required"):
+            lines.append("  Обязательный вопрос")
+        return "\n".join(lines)
+
+    async def request_form_creation(
+            self,
+            chat_id: int,
+            pending_id: str,
+            title: str,
+            description: str,
+            is_quiz: bool,
+            questions: list[dict],
+    ):
+        logger.info(
+            "TelegramService.request_form_creation called: chat_id=%s title=%r pending_id=%s",
+            chat_id,
+            title,
+            pending_id,
+        )
+        text = f"Создать Google Форму *«{title}»*?"
+        if description:
+            text += f"\nОписание: {description}"
+        if is_quiz:
+            text += "\n🎯 Режим квиза (с оценками)"
+        if questions:
+            text += f"\n\nВопросы ({len(questions)}):\n"
+            text += "\n".join(
+                self._format_question_summary(question) for question in questions
+            )
+
+        await self._send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_form_create_keyboard(pending_id=pending_id),
+        )
+
+    async def request_form_question(
+            self,
+            chat_id: int,
+            pending_id: str,
+            form_title: str,
+            question: dict,
+    ):
+        logger.info(
+            "TelegramService.request_form_question called: chat_id=%s form_title=%r pending_id=%s",
+            chat_id,
+            form_title,
+            pending_id,
+        )
+        text = (
+            f"Добавить вопрос в форму *«{form_title}»*?\n\n"
+            f"{self._format_question_summary(question)}"
+        )
+        await self._send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=get_form_question_keyboard(pending_id=pending_id),
+        )
+
+    async def request_form_publish(self, chat_id: int, pending_id: str, form_title: str):
+        logger.info(
+            "TelegramService.request_form_publish called: chat_id=%s form_title=%r pending_id=%s",
+            chat_id,
+            form_title,
+            pending_id,
+        )
+        await self._send_message(
+            chat_id=chat_id,
+            text=f"Опубликовать форму *«{form_title}»* и открыть приём ответов?",
+            reply_markup=get_form_publish_keyboard(pending_id=pending_id),
+        )
+
+    async def send_form_link(self, chat_id: int, title: str, responder_uri: str):
+        logger.info(
+            "TelegramService.send_form_link called: chat_id=%s title=%r",
+            chat_id,
+            title,
+        )
+        await self._send_message(
+            chat_id=chat_id,
+            text=f"Форма *«{title}»* готова:\n{responder_uri}",
+            reply_markup=get_form_link_keyboard(url=responder_uri),
+        )
+
     async def request_choice(
         self,
         chat_id: int,
