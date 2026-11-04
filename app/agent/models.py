@@ -42,6 +42,8 @@ class ToolCallInfo:
 class LLMResponse:
     text: str
     tool_calls: list[ToolCallInfo] = field(default_factory=list)
+    finish_reason: str | None = None
+    refusal: str | None = None
 
 @dataclass
 class Message:

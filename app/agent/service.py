@@ -9,6 +9,11 @@ from app.agent.tools import ToolRegistry
 
 
 class AgentService:
+    EMPTY_RESPONSE_MESSAGE = (
+        "Не удалось получить содержательный ответ от AI. "
+        "Попробуйте повторить запрос немного позже."
+    )
+
     def __init__(self, llm: LLMClient, history: HistoryStore, tools: ToolRegistry, max_iterations: int = 10):
         self._llm = llm
         self._history = history
@@ -26,6 +31,35 @@ class AgentService:
             lock = asyncio.Lock()
             self._chat_locks[chat_id] = lock
         return lock
+
+    @staticmethod
+    def _is_confirmation(text: str | None) -> bool:
+        if not text:
+            return False
+        normalized = text.strip().lower().replace("ё", "е")
+        return normalized in {
+            "да",
+            "да делай",
+            "делай",
+            "создавай",
+            "сделай",
+            "сделай форму",
+            "создавай форму",
+        }
+
+    @classmethod
+    def _has_draft_before_confirmation(cls, messages: list[Message]) -> bool:
+        if not messages or messages[-1].role != "user":
+            return False
+        if not cls._is_confirmation(messages[-1].content if isinstance(messages[-1].content, str) else None):
+            return False
+
+        return any(
+            call.name == "send_message"
+            for message in messages[:-1]
+            if message.role == "assistant"
+            for call in (message.tool_calls or [])
+        )
 
     async def handel_voice(self, voice: bytes):
         res = await self._llm.transcription_voice(voice_bytes=voice)
@@ -76,20 +110,36 @@ class AgentService:
         user_id: int,
         attachments: list[TelegramAttachment],
     ) -> str:
+        initial_history = await self._history.get(chat_id)
+        confirmed_draft = self._has_draft_before_confirmation(initial_history)
         for iteration in range(self._max_iterations):
             logger.info("Agent iteration started: chat_id=%s iteration=%s", chat_id, iteration + 1)
+            history = await self._history.get(chat_id)
             response = await self._llm.complete(
-                messages=await self._history.get(chat_id),
+                messages=history,
                 tools=self._tools.schemas(),
             )
 
             if not response.tool_calls:
-                logger.info("Agent completed with text: chat_id=%s text=%r", chat_id, response.text)
+                if not response.text.strip():
+                    logger.warning(
+                        "LLM returned an empty response: chat_id=%s iteration=%s "
+                        "finish_reason=%s refusal=%r",
+                        chat_id,
+                        iteration + 1,
+                        response.finish_reason,
+                        response.refusal,
+                    )
+                    response_text = self.EMPTY_RESPONSE_MESSAGE
+                else:
+                    response_text = response.text
+
+                logger.info("Agent completed with text: chat_id=%s text=%r", chat_id, response_text)
                 await self._history.append(
                     chat_id,
-                    Message("assistant", response.text),
+                    Message("assistant", response_text),
                 )
-                return response.text
+                return response_text
 
             await self._history.append(
                 chat_id,
@@ -99,6 +149,7 @@ class AgentService:
                     tool_calls=response.tool_calls,
                 ),
             )
+            has_form_creation_call = any(call.name == "create_form" for call in response.tool_calls)
             for call in response.tool_calls:
                 try:
                     arguments = json.loads(call.arguments)
@@ -190,6 +241,36 @@ class AgentService:
                         ),
                     )
 
+                if (
+                    call.name == "finish"
+                    and confirmed_draft
+                    and not has_form_creation_call
+                ):
+                    result = ToolResult(
+                        call_id=call.id,
+                        content=json.dumps(
+                            {
+                                "status": "error",
+                                "error_type": "IncompleteFormCreation",
+                                "message": (
+                                    "Подтверждён ранее подготовленный тест. "
+                                    "Сначала вызови create_form с полным списком вопросов, "
+                                    "затем дождись подтверждения формы. Не заверши диалог сейчас."
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
+                    await self._history.append(
+                        chat_id,
+                        Message("tool", result.content, call.id),
+                    )
+                    logger.warning(
+                        "Blocked premature finish after confirmed form draft: chat_id=%s call_id=%s",
+                        chat_id,
+                        call.id,
+                    )
+                    continue
                 await self._history.append(
                     chat_id,
                     Message("tool", result.content, call.id)

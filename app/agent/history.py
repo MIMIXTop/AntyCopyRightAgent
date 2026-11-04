@@ -19,7 +19,13 @@ class InMemoryHistoryStore:
         ):
             self._items[chat_id].insert(0, self._system_message)
         messages = list(self._items[chat_id])
-        logger.info("History loaded: chat_id=%s messages=%s", chat_id, [asdict(message) for message in messages])
+        log_messages = [
+            {"role": message.role, "content": "[system prompt omitted]"}
+            if message.role == "system"
+            else asdict(message)
+            for message in messages
+        ]
+        logger.info("History loaded: chat_id=%s messages=%s", chat_id, log_messages)
         return messages
 
     async def append(self, chat_id: int, *messages: Message):

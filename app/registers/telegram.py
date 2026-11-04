@@ -1,6 +1,6 @@
 from app.tools.loader import load_schema
 from app.core.errors import ToolArgumentsError
-from app.agent.speech_service import SpeechService
+from app.agent.speech_service import SpeechService, MAX_EXTRA_CHARS
 from app.api.telegram.service import TelegramService
 from app.agent.tools import ToolRegistry, ToolContext, ToolResult
 from app.core.logging import logger
@@ -23,7 +23,17 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, s
         text = args.get("text")
         if not isinstance(text, str) or not text.strip():
             raise ToolArgumentsError("speech", "text is required")
-        voice = await speech_service.get_speech(text)
+        instructions = args.get("instructions")
+        if instructions is not None:
+            if not isinstance(instructions, str):
+                raise ToolArgumentsError("speech", "instructions must be a string")
+            instructions = instructions.strip() or None
+            if instructions and len(instructions) > MAX_EXTRA_CHARS:
+                raise ToolArgumentsError(
+                    "speech",
+                    f"instructions must be {MAX_EXTRA_CHARS} characters or fewer",
+                )
+        voice = await speech_service.get_speech(text, instructions)
         await telegram.send_speech(speech=voice, chat_id=context.chat_id)
         return ToolResult(context.call_id, '{"status":"delivered"}')
 
