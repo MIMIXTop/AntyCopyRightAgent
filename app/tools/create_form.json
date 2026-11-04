@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "create_form",
-    "description": "Create a Google Forms form (optionally a graded quiz) with questions. The tool asks for explicit Telegram confirmation before creating anything. After confirmation the created form_id and responder link arrive in an action_result event.",
+    "description": "Create a Google Forms form (optionally a graded quiz) with the complete question list. Use this immediately when the teacher asks to create a test or confirms a previously drafted test. Do not return another draft instead of calling the tool. The tool asks for explicit Telegram confirmation before creating anything. After confirmation the created form_id and responder link arrive in an action_result event.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -11,7 +11,8 @@
         "is_quiz": {"type": "boolean", "description": "True to enable quiz mode with grading (correct answers and points)."},
         "questions": {
           "type": "array",
-          "description": "Optional list of questions to add to the new form.",
+          "minItems": 1,
+          "description": "Complete list of questions to add to the form. For a test, include every generated question here.",
           "items": {
             "type": "object",
             "properties": {
@@ -31,7 +32,7 @@
                 "items": {"type": "string", "minLength": 1},
                 "description": "Correct answers for quiz mode. For choice questions each value must exactly match one of options."
               },
-              "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Required together with correct_answers (defaults to 1)."},
+              "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Optional when correct_answers is provided; defaults to 1."},
               "required": {"type": "boolean", "description": "Whether the respondent must answer this question."}
             },
             "required": ["title", "type"],
@@ -39,7 +40,7 @@
           }
         }
       },
-      "required": ["title"],
+      "required": ["title", "is_quiz", "questions"],
       "additionalProperties": false
     }
   }
