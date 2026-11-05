@@ -175,6 +175,12 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         links = args.get("links", [])
         drive_file_ids = args.get("drive_file_ids", [])
         telegram_attachments = context.attachments
+        logger.info(
+            "Creating announcement confirmation: chat_id=%s course_id=%s telegram_attachments=%s",
+            context.chat_id,
+            course_id,
+            len(telegram_attachments),
+        )
 
         if not isinstance(course_id, str) or not course_id.strip():
             raise ToolArgumentsError(
@@ -226,7 +232,11 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
 
         return ToolResult(
             call_id=context.call_id,
-            content='{"status": "paused", "reason": "waiting_for_user_confirmation"}',
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "telegram_attachments": len(telegram_attachments),
+            }),
             terminal=True
         )
 

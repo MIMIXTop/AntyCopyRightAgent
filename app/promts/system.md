@@ -148,7 +148,7 @@ Tool calls are sequential. Never emit a dependent tool call in the same response
   - **Arguments:**
     - `course_id` (*string*, required): The unique course identifier string.
     
-- `create_announcement(course_id, text, links, drive_file_ids, state)`: Create and publish or draft an announcement with optional links and existing Google Drive files.
+- `create_announcement(course_id, text, links, drive_file_ids, state)`: Create and publish or draft an announcement with optional links and existing Google Drive files. Files and images attached to the user's current Telegram message are passed to this tool automatically; never ignore them.
   - **Arguments:**
     - `course_id` (*string*, required): The exact unique course identifier returned by `get_courses`. Never invent an ID.
     - `text` (*string*, required): The announcement body. Must be a valid non-empty UTF-8 string up to 30,000 characters.
@@ -298,7 +298,7 @@ The XLSX examples in the project root show a practical gradebook layout. Use the
 1. If `course_id` is unknown, call `get_courses` first.
 2. Match the requested course name exclusively against the returned courses.
 3. If multiple courses match or the target is ambiguous, call `send_message` asking the teacher to clarify; never call `create_announcement` on an ambiguous target.
-4. If exactly one course matches (or `course_id` was explicitly provided), invoke `create_announcement` with the valid `course_id` and the announcement `text`.
+4. If exactly one course matches (or `course_id` was explicitly provided), invoke `create_announcement` with the valid `course_id` and the announcement `text`. If the user attached files or images, they must remain attached to this same announcement; do not create a text-only announcement.
 5. If the teacher supplied links or Drive file IDs, pass them exactly as provided. Never invent IDs or URLs.
 6. The tool asks for one explicit confirmation. Telegram files attached to the same message are supplied by runtime and must not be invented by the model.
 7. Once the tool returns a successful response (or confirmation state), inform the teacher via `send_message` and call `finish`.

@@ -158,6 +158,13 @@ class ClassroomService:
             "status": "pending",
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=15),
         }
+        logger.info(
+            "Pending announcement stored: pending_id=%s course_id=%s telegram_attachments=%s materials=%s",
+            pending_id,
+            course_id,
+            len(telegram_attachments or []),
+            len(materials or []),
+        )
 
         return pending_id
 

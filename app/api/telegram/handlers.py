@@ -45,6 +45,8 @@ def create_router(
                 )
             elif part.photo:
                 photo = part.photo[-1]
+                photo_io = io.BytesIO()
+                await bot.download(photo, photo_io)
                 attachments.append(
                     TelegramAttachment(
                         file_id=photo.file_id,
@@ -52,6 +54,7 @@ def create_router(
                         mime_type="image/jpeg",
                         size=photo.file_size,
                         kind="photo",
+                        data=photo_io.getvalue(),
                     )
                 )
 
@@ -130,35 +133,9 @@ def create_router(
         if message.media_group_id:
             # Handled by handle_media_group above.
             return
-
-        doc = message.document
-        caption = message.caption or "Пользователь отправил файл."
-
-        text_for_agent = caption
-        document_io = io.BytesIO()
-        await bot.download(doc, document_io)
-
-        try:
-            answer = await agent.handle(
-                chat_id=message.chat.id,
-                user_id=message.from_user.id,
-                text=text_for_agent,
-                attachments=[
-                    TelegramAttachment(
-                        file_id=doc.file_id,
-                        file_name=doc.file_name,
-                        mime_type=doc.mime_type,
-                        size=doc.file_size,
-                        data=document_io.getvalue(),
-                    )
-                ],
-            )
-        except ApplicationError as error:
-            await error_presenter.send_error(message.chat.id, error)
-            return
-
-        if answer:
-            await message.answer(answer)
+        # Some Telegram clients send selected documents as separate updates
+        # without media_group_id. Debounce them into one agent turn as well.
+        await media_groups.add(message)
 
     @router.message(F.text)
     async def handle_message(message: TgMessage) -> None:
@@ -194,29 +171,6 @@ def create_router(
         if message.media_group_id:
             # Handled by handle_media_group above.
             return
-
-        photo = message.photo[-1]
-
-        attachment = TelegramAttachment(
-            file_id=photo.file_id,
-            file_name=f"photo_{photo.file_unique_id}.jpg",
-            mime_type="image/jpeg",
-            size=photo.file_size,
-            kind="photo",
-        )
-
-        try:
-            answer = await agent.handle(
-                chat_id=message.chat.id,
-                user_id=message.from_user.id,
-                text=message.caption or "Пользователь отправил фотографию.",
-                attachments=[attachment],
-            )
-        except ApplicationError as error:
-            await error_presenter.send_error(message.chat.id, error)
-            return
-
-        if answer:
-            await message.answer(answer)
+        await media_groups.add(message)
 
     return router

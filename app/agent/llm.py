@@ -40,6 +40,7 @@ class OpenAIAdapter(LLMClient):
         ai_messages = []
         for msg in messages:
             attachments = msg.attachments or []
+            attachment_manifest = self._attachment_manifest(attachments)
 
             photo_attachments = [
                 att for att in attachments
@@ -50,6 +51,8 @@ class OpenAIAdapter(LLMClient):
                 content_parts: list[dict[str, Any]] = []
                 if msg.content:
                     content_parts.append({"type": "text", "text": str(msg.content)})
+                if attachment_manifest:
+                    content_parts.append({"type": "text", "text": attachment_manifest})
 
                 for photo in photo_attachments:
                     b64_img = base64.b64encode(photo.data).decode("utf-8")
@@ -62,7 +65,10 @@ class OpenAIAdapter(LLMClient):
                     })
                 ai_content = content_parts
             else:
-                ai_content = msg.content or ""
+                text = str(msg.content or "")
+                if attachment_manifest:
+                    text = f"{text}\n\n{attachment_manifest}" if text else attachment_manifest
+                ai_content = text
 
             ai_msg: dict[str, Any] = {"role": msg.role, "content": ai_content}
             if msg.tool_call_id:
@@ -140,3 +146,21 @@ class OpenAIAdapter(LLMClient):
             text=choice.content or "",
             tool_calls=parsed_tool_calls
         )
+
+    @staticmethod
+    def _attachment_manifest(attachments) -> str:
+        if not attachments:
+            return ""
+
+        lines = [
+            "Вложения текущего сообщения (обработай их как одну группу):"
+        ]
+        for index, attachment in enumerate(attachments, start=1):
+            name = attachment.file_name or f"файл {index}"
+            details = [name]
+            if attachment.mime_type:
+                details.append(attachment.mime_type)
+            if attachment.size is not None:
+                details.append(f"{attachment.size} байт")
+            lines.append(f"{index}. " + " — ".join(details))
+        return "\n".join(lines)

@@ -140,7 +140,14 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
                     file_name="notes.pdf",
                     mime_type="application/pdf",
                     size=123,
-                )
+                ),
+                TelegramAttachment(
+                    file_id="tg-image",
+                    file_name="diagram.png",
+                    mime_type="image/png",
+                    size=456,
+                    kind="photo",
+                ),
             ],
         ),
         {
@@ -152,6 +159,7 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
     )
 
     assert json.loads(result.content)["status"] == "paused"
+    assert json.loads(result.content)["telegram_attachments"] == 2
     pending = service.get_pending_announcement(
         next(iter(service._pending_announcements))
     )
@@ -164,7 +172,10 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
             }
         },
     ]
-    assert pending["telegram_attachments"][0].file_id == "tg-file"
+    assert [attachment.file_id for attachment in pending["telegram_attachments"]] == [
+        "tg-file",
+        "tg-image",
+    ]
     assert telegram.announcement_confirmation["course_name"] == "Test course"
 
 

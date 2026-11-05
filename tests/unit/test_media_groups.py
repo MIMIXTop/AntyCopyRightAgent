@@ -92,3 +92,25 @@ async def test_media_group_buffer_arrivals_within_delay_are_batched():
 
     assert len(batches) == 1
     assert [part.index for part in batches[0]] == [0, 1, 2, 3]
+
+
+@pytest.mark.asyncio
+async def test_standalone_attachments_arriving_together_are_batched():
+    batches = []
+
+    async def process(parts):
+        batches.append(parts)
+
+    buffer = MediaGroupBuffer(process, delay=0.1)
+
+    async def stream():
+        tasks = []
+        for i in range(3):
+            tasks.append(asyncio.create_task(buffer.add(make_part(1, None, i))))
+            await asyncio.sleep(0.01)
+        await asyncio.gather(*tasks)
+
+    await asyncio.wait_for(stream(), timeout=2)
+
+    assert len(batches) == 1
+    assert [part.index for part in batches[0]] == [0, 1, 2]

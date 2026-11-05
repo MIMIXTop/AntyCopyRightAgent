@@ -157,6 +157,11 @@ def create_callback_router(
 
         materials = []
         telegram_attachments = data.get("telegram_attachments", [])
+        logger.info(
+            "Announcement confirmation attachments: pending_id=%s count=%s",
+            pending_id,
+            len(telegram_attachments),
+        )
 
         try:
             if telegram_attachments:
@@ -164,6 +169,13 @@ def create_callback_router(
                 folder_id = course.teacher_folder.id if course.teacher_folder else None
 
                 for attachment in telegram_attachments:
+                    logger.info(
+                        "Uploading announcement attachment: pending_id=%s file_id=%s file_name=%s kind=%s",
+                        pending_id,
+                        attachment.file_id,
+                        attachment.file_name,
+                        attachment.kind,
+                    )
                     file_name, file_bytes = await telegram.get_file_content(attachment.file_id)
 
                     drive_file = await classroom.upload_to_drive(
@@ -180,6 +192,11 @@ def create_callback_router(
                             "shareMode": "VIEW"
                         }
                     })
+                logger.info(
+                    "Announcement attachments uploaded: pending_id=%s count=%s",
+                    pending_id,
+                    len(materials),
+                )
 
             result = await classroom.create_announcement(
                 telegram_id=data["telegram_id"],
