@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 
 from app.agent.models import Message, ToolContext, TelegramAttachment, ToolResult
 from app.core.errors import ApplicationError, AgentIterationLimitError
@@ -9,11 +10,19 @@ from app.agent.tools import ToolRegistry
 
 
 class AgentService:
-    def __init__(self, llm: LLMClient, history: HistoryStore, tools: ToolRegistry, max_iterations: int = 10):
+    def __init__(
+        self,
+        llm: LLMClient,
+        history: HistoryStore,
+        tools: ToolRegistry,
+        max_iterations: int = 10,
+        role_resolver: Callable[[int], Awaitable[str]] | None = None,
+    ):
         self._llm = llm
         self._history = history
         self._tools = tools
         self._max_iterations = max_iterations
+        self._role_resolver = role_resolver
         # Agent runs for the same chat must never interleave: the history store
         # is shared and each loop reads it on every iteration. Without this
         # lock, an album of 4 files (or two rapid messages) drives several
@@ -47,11 +56,12 @@ class AgentService:
             attachments or [],
         )
         async with self._lock_for(chat_id):
+            role = await self._resolve_role(user_id)
             await self._history.append(
                 chat_id,
                 Message("user", content=text, attachments=attachments or []),
             )
-            return await self._run_loop(chat_id, user_id, attachments or [])
+            return await self._run_loop(chat_id, user_id, attachments or [], role)
 
     async def resume_after_action(
         self,
@@ -61,6 +71,7 @@ class AgentService:
     ) -> str:
         """Resume the agent after an external confirmation callback."""
         async with self._lock_for(chat_id):
+            role = await self._resolve_role(user_id)
             await self._history.append(
                 chat_id,
                 Message(
@@ -68,18 +79,33 @@ class AgentService:
                     json.dumps(event, ensure_ascii=False),
                 ),
             )
-            return await self._run_loop(chat_id, user_id, [])
+            return await self._run_loop(chat_id, user_id, [], role)
+
+    async def _resolve_role(self, user_id: int) -> str:
+        if self._role_resolver is None:
+            return "teacher"
+        try:
+            role = (await self._role_resolver(user_id)).lower()
+        except Exception:
+            logger.exception("Unable to resolve user role: user_id=%s", user_id)
+            return "teacher"
+        return role if role in {"teacher", "admin"} else "teacher"
 
     async def _run_loop(
         self,
         chat_id: int,
         user_id: int,
         attachments: list[TelegramAttachment],
+        role: str,
     ) -> str:
         for iteration in range(self._max_iterations):
             logger.info("Agent iteration started: chat_id=%s iteration=%s", chat_id, iteration + 1)
+            role_message = Message(
+                "system",
+                self._role_prompt(role),
+            )
             response = await self._llm.complete(
-                messages=await self._history.get(chat_id),
+                messages=[role_message, *(await self._history.get(chat_id))],
                 tools=self._tools.schemas(),
             )
 
@@ -149,7 +175,13 @@ class AgentService:
                 try:
                     result = await self._tools.call(
                         call.name,
-                        ToolContext(chat_id, user_id, call.id, attachments or []),
+                        ToolContext(
+                            chat_id,
+                            user_id,
+                            call.id,
+                            attachments or [],
+                            role,
+                        ),
                         arguments,
                     )
                 except ApplicationError as error:
@@ -208,3 +240,17 @@ class AgentService:
 
         logger.error("Agent iteration limit reached: chat_id=%s limit=%s", chat_id, self._max_iterations)
         raise AgentIterationLimitError(self._max_iterations)
+
+    @staticmethod
+    def _role_prompt(role: str) -> str:
+        if role == "teacher":
+            return (
+                "Текущий пользователь имеет роль TEACHER. Он может работать со своими "
+                "курсами, заданиями, объявлениями и студентами, но не имеет доступа к "
+                "административному dashboard."
+            )
+        return (
+            "Текущий пользователь имеет роль ADMIN. Разрешены административные операции "
+            "и dashboard, но Google Classroom действия всё равно выполняй только по "
+            "явному запросу и с точными идентификаторами."
+        )

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: SecretStr
     OPEN_AI_KEY: SecretStr
     CPP_SERVER_URL: str
+    PUBLIC_SERVER_URL: str = "http://localhost:8080"
     LLM_MODEL: str
     HTTP_TIMEOUT_SECONDS: float = 15.0
     LLM_BASE_URL: str
@@ -41,6 +42,10 @@ class Settings(BaseSettings):
     @property
     def speech_api_key(self) -> str:
         return self.SPEECH_TOKEN.get_secret_value().strip()
+
+    @property
+    def public_server_url(self) -> str:
+        return self.PUBLIC_SERVER_URL.rstrip("/")
 
 
 settings = Settings()

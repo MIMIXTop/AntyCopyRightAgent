@@ -124,6 +124,8 @@ uv sync
 BOT_TOKEN=your_telegram_bot_token
 OPEN_AI_KEY=your_groq_or_openrouter_key
 CPP_SERVER_URL=http://localhost:8080
+# URL reachable from Telegram (do not use the Docker hostname "server")
+PUBLIC_SERVER_URL=http://localhost:8080
 ML_SERVICE_URL=http://localhost:8000
 ```
 

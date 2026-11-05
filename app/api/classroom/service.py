@@ -233,7 +233,11 @@ class ClassroomService:
             course_work_id,
         )
         self._validate_telegram_id(telegram_id)
-        submissions_status = await self.client.get_submissions(telegram_id, course_id, course_work_id)
+        submissions_status = await self.client.get_submissions(
+            telegram_id,
+            course_id,
+            course_work_id,
+        )
         return submissions_status
 
     async def create_course(self, telegram_id: int, course_name: str, course_description: str, course_section: str):

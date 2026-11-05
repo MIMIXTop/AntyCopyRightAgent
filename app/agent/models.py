@@ -25,6 +25,7 @@ class ToolContext:
     user_id: int
     call_id: str
     attachments: list[TelegramAttachment] = field(default_factory=list)
+    role: str = "teacher"
 
 @dataclass
 class ToolResult:

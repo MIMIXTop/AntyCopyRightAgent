@@ -134,11 +134,12 @@ class StudentSubmission(ClassroomModel):
     id: str
     course_id: str = Field(validation_alias="courseId")
     course_work_id: str = Field(validation_alias="courseWorkId")
-    name: str
+    name: str | None = None
     alternate_link: str | None = Field(
         default=None,
         validation_alias=AliasChoices("alternateLink", "alternate_link"),
     )
+    state: str | None = None
 
 
 class Profile(ClassroomModel):

@@ -59,6 +59,18 @@ async def build_application(settings: Settings) -> Application:
         base_url=settings.CPP_SERVER_URL.rstrip("/"),
         timeout=settings.HTTP_TIMEOUT_SECONDS,
     )
+
+    async def resolve_role(telegram_id: int) -> str:
+        response = await http_client.get(
+            "/api/auth/telegram-role",
+            params={"telegram_id": telegram_id},
+        )
+        if response.status_code == 404:
+            return "teacher"
+        response.raise_for_status()
+        payload = response.json()
+        role = payload.get("role")
+        return role if isinstance(role, str) and role in {"teacher", "admin"} else "teacher"
     llm_client = AsyncOpenAI(
         base_url=settings.LLM_BASE_URL.rstrip("/"),
         api_key=settings.openai_api_key,
@@ -118,6 +130,7 @@ async def build_application(settings: Settings) -> Application:
         llm=OpenAIAdapter(llm_client, settings.LLM_MODEL),
         history=storage,
         tools=registry,
+        role_resolver=resolve_role,
     )
     dispatcher = Dispatcher()
     dispatcher.include_router(create_router(agent, bot, voice_service,telegram))
