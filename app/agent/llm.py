@@ -1,6 +1,5 @@
 import base64
 from typing import Sequence, Any
-from dataclasses import asdict
 
 import openai
 from openai import AsyncOpenAI
@@ -30,13 +29,6 @@ class OpenAIAdapter(LLMClient):
             messages: Sequence[Message],
             tools: list[dict[str, Any]] | None = None
     ) -> LLMResponse:
-        logger.info(
-            "LLM complete called: model=%s messages=%s tools=%s",
-            self._model,
-            [asdict(message) for message in messages],
-            tools,
-        )
-
         ai_messages = []
         for msg in messages:
             attachments = msg.attachments or []
@@ -77,20 +69,23 @@ class OpenAIAdapter(LLMClient):
                 ]
             ai_messages.append(ai_msg)
 
-        debug_messages = []
+        request_messages = []
         for m in ai_messages:
+            if m["role"] == "system":
+                continue
             if isinstance(m["content"], list):
-                debug_messages.append({
+                request_messages.append({
                     "role": m["role"],
                     "content": f"[Multimodal content: {len(m['content'])} parts]"
                 })
             else:
-                debug_messages.append(m)
+                request_messages.append(m)
 
         logger.info(
-            "LLM complete called: model=%s messages_count=%d tools_count=%d",
+            "LLM request: model=%s messages_count=%d messages=%s tools_count=%d",
             self._model,
-            len(ai_messages),
+            len(request_messages),
+            request_messages,
             len(tools or []),
         )
 
@@ -111,8 +106,10 @@ class OpenAIAdapter(LLMClient):
 
         choice = response.choices[0].message
         logger.info(
-            "LLM response received: model=%s text=%r tool_calls=%s",
+            "LLM response received: model=%s finish_reason=%s refusal=%r text=%r tool_calls=%s",
             self._model,
+            response.choices[0].finish_reason,
+            choice.refusal,
             choice.content,
             [
                 {"id": call.id, "name": call.function.name, "arguments": call.function.arguments}
@@ -122,21 +119,18 @@ class OpenAIAdapter(LLMClient):
 
         parsed_tool_calls = []
         if choice.tool_calls:
-            if len(choice.tool_calls) > 1:
-                logger.warning(
-                    "LLM returned multiple tool calls; executing only the first one sequentially: count=%s",
-                    len(choice.tool_calls),
-                )
-            tc = choice.tool_calls[0]
-            parsed_tool_calls.append(
+            parsed_tool_calls = [
                 ToolCallInfo(
-                    id=tc.id,
-                    name=tc.function.name,
-                    arguments=tc.function.arguments
+                    id=tool_call.id,
+                    name=tool_call.function.name,
+                    arguments=tool_call.function.arguments,
                 )
-            )
+                for tool_call in choice.tool_calls
+            ]
 
         return LLMResponse(
             text=choice.content or "",
-            tool_calls=parsed_tool_calls
+            tool_calls=parsed_tool_calls,
+            finish_reason=response.choices[0].finish_reason,
+            refusal=choice.refusal,
         )

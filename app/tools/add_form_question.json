@@ -23,7 +23,7 @@
           "items": {"type": "string", "minLength": 1},
           "description": "Correct answers for quiz mode. For choice questions each value must exactly match one of options."
         },
-        "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Required together with correct_answers (defaults to 1)."},
+        "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Optional when correct_answers is provided; defaults to 1."},
         "required": {"type": "boolean", "description": "Whether the respondent must answer this question."}
       },
       "required": ["form_id", "title", "type"],

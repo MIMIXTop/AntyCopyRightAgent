@@ -40,6 +40,18 @@ async def test_agent_returns_text_and_preserves_history():
 
 
 @pytest.mark.asyncio
+async def test_agent_replaces_empty_llm_response_with_safe_message():
+    llm = FakeLLM([LLMResponse("")])
+    service = make_service(llm)
+
+    result = await service.handle(1, 2, "создай тест")
+
+    assert result == AgentService.EMPTY_RESPONSE_MESSAGE
+    history = await service._history.get(1)
+    assert history[-1].content == AgentService.EMPTY_RESPONSE_MESSAGE
+
+
+@pytest.mark.asyncio
 async def test_agent_executes_tool_then_returns_final_text():
     called = {}
 
@@ -56,6 +68,78 @@ async def test_agent_executes_tool_then_returns_final_text():
     assert await service.handle(1, 2, "run") == "done"
     assert called == {"value": 7}
     assert len(llm.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_agent_executes_multiple_tool_calls_in_order():
+    calls = []
+
+    async def handler(context, args):
+        calls.append(args["value"])
+        return ToolResult(context.call_id, '{"ok":true}')
+
+    llm = FakeLLM([
+        LLMResponse(
+            "",
+            [
+                ToolCallInfo("call-1", "demo", '{"value": 1}'),
+                ToolCallInfo("call-2", "demo", '{"value": 2}'),
+            ],
+        ),
+        LLMResponse("done"),
+    ])
+    service = make_service(llm, handler)
+
+    assert await service.handle(1, 2, "run") == "done"
+    assert calls == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_agent_does_not_finish_confirmed_form_draft_without_create_form():
+    registry = ToolRegistry()
+    calls = []
+
+    async def send_message(context, args):
+        calls.append(("send_message", args["text"]))
+        return ToolResult(context.call_id, '{"status":"delivered"}')
+
+    async def create_form(context, args):
+        calls.append(("create_form", args))
+        return ToolResult(context.call_id, '{"status":"paused"}', terminal=True)
+
+    async def finish(context, args):
+        return ToolResult(context.call_id, '{"status":"ok"}', terminal=True)
+
+    registry.register("send_message", send_message, {"name": "send_message"})
+    registry.register("create_form", create_form, {"name": "create_form"})
+    registry.register("finish", finish, {"name": "finish"})
+    llm = FakeLLM([
+        LLMResponse(
+            "",
+            [
+                ToolCallInfo("call-1", "send_message", '{"text":"Запускаю создание"}'),
+                ToolCallInfo("call-2", "finish", "{}"),
+            ],
+        ),
+        LLMResponse(
+            "",
+            [
+                ToolCallInfo(
+                    "call-3",
+                    "create_form",
+                    '{"title":"Тест по Python","is_quiz":true,"questions":[{"title":"2+2?","type":"radio","options":["3","4","5"],"correct_answers":["4"],"points":1,"required":true}]}',
+                ),
+            ],
+        ),
+        LLMResponse("created"),
+    ])
+    service = AgentService(llm, InMemoryHistoryStore(), registry, max_iterations=3)
+
+    await service.handle(1, 2, "создай тест")
+    result = await service.handle(1, 2, "да делай")
+
+    assert result == "created"
+    assert [name for name, _ in calls] == ["send_message", "create_form"]
 
 
 @pytest.mark.asyncio
