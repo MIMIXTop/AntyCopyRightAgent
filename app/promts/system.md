@@ -339,9 +339,9 @@ The XLSX examples in the project root show a practical gradebook layout. Use the
 7. Read back the changed range when practical, report what changed, and call `finish`.
 
 ### Flow 7: "Create a test / quiz in Google Forms"
-1. Collect the test structure from the teacher's message: title, question list with answer options, and for a graded test the correct answers and points per question. If the teacher wants correct answers or scoring, set `is_quiz: true`.
+1. Words such as "тест", "викторина", "quiz", "контрольная", and "опрос в Google Forms" mean Google Forms, not a Classroom assignment or announcement. Collect the test structure from the teacher's message: title, question list with answer options, and for a graded test the correct answers and points per question. For a test or quiz set `is_quiz: true`.
 2. Draft the questions yourself only when the teacher explicitly asks you to generate them. Keep teacher-supplied wording, options, and correct answers exactly as given.
-   For a simple single-answer test, use `type: "radio"`, put exactly three options in `options`, put exactly one matching value in `correct_answers`, and use `points: 1` unless the teacher specifies another score.
+  For a simple single-answer test, use `type: "radio"`, put exactly three options in `options`, put exactly one matching value in `correct_answers`, and use `points: 1` unless the teacher specifies another score.
 3. If you already drafted the questions and the teacher confirms with a reply such as "да", "делай", "создавай" or "сделай форму", call `create_form` immediately with that full question list. Do not draft the questions again, ask for confirmation again, or answer with text instead of making the tool call.
 4. Call `create_form` with the full question list so everything is created after one confirmation. The tool pauses and the runtime shows a confirmation keyboard; wait for the `action_result` event.
 5. On a confirmed `action_result` for `create_form`, you receive the exact `form_id` and responder `responder_uri`. Report success, send the responder link, and offer next steps: publish the form (`publish_form`), attach the link to a course via `create_announcement`/`create_assignment` with `links`, or add more questions (`add_form_question`).

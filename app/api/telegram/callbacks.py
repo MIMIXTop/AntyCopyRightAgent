@@ -618,6 +618,15 @@ def create_callback_router(
             await call.answer()
             await call.message.edit_text("⏳ Создаю форму...")
             try:
+                logger.info(
+                    "Creating confirmed Google Form: pending_id=%s telegram_id=%s "
+                    "title=%r is_quiz=%s questions=%s",
+                    pending_id,
+                    data["telegram_id"],
+                    data["title"],
+                    data["is_quiz"],
+                    len(data["questions"]),
+                )
                 form = await forms.create_form_with_questions(
                     telegram_id=data["telegram_id"],
                     title=data["title"],
@@ -668,6 +677,21 @@ def create_callback_router(
                     Message("system", f"Создание формы не выполнено: {error}"),
                 )
                 await notify_agent(call, "create_form", "confirmed", False, str(error))
+            except Exception:
+                logger.exception(
+                    "Unexpected Google Form creation failure: pending_id=%s",
+                    pending_id,
+                )
+                await call.message.edit_text(
+                    "❌ Не удалось создать форму из-за внутренней ошибки."
+                )
+                await notify_agent(
+                    call,
+                    "create_form",
+                    "confirmed",
+                    False,
+                    "Внутренняя ошибка при создании Google Forms.",
+                )
             finally:
                 forms.remove_pending_form(pending_id)
 

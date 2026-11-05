@@ -239,7 +239,8 @@ class TelegramService:
             title,
             pending_id,
         )
-        text = f"Создать Google Форму *«{title}»*?"
+        form_kind = "тест/викторину" if is_quiz else "форму/опрос"
+        text = f"Создать Google Forms {form_kind} *«{title}»*?"
         if description:
             text += f"\nОписание: {description}"
         if is_quiz:

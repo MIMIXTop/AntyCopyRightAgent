@@ -1,7 +1,9 @@
+import openai
 from openai import AsyncOpenAI
 
 from app.agent.prompt import load_speech_prompt
 from app.config.settings import settings
+from app.core.errors import LLMServiceError
 from app.core.logging import logger
 
 # The TTS endpoint rejects requests with a 400 when `instructions` exceed
@@ -17,8 +19,9 @@ PHRASE_MARKER = "\n\nFor this phrase: "
 class SpeechService:
     def __init__(self) -> None:
         self.model = settings.SPEECH_LLM_MODEL
+        self.base_url = settings.SPEECH_BASE_URL.rstrip("/")
         self.client = AsyncOpenAI(
-            base_url=settings.SPEECH_BASE_URL,
+            base_url=self.base_url,
             api_key=settings.speech_api_key,
         )
         self.base_instructions = load_speech_prompt().strip()
@@ -48,12 +51,24 @@ class SpeechService:
 
     async def get_speech(self, text: str, instructions: str | None = None) -> bytes:
         prompt = self._build_instructions(instructions)
-        speech = await self.client.audio.speech.with_raw_response.create(
-            model=self.model,
-            input=text,
-            voice="Serena",
-            instructions=prompt,
-            response_format="mp3",
-            speed=1.1
-        )
+        try:
+            speech = await self.client.audio.speech.with_raw_response.create(
+                model=self.model,
+                input=text,
+                voice="Serena",
+                instructions=prompt,
+                response_format="mp3",
+                speed=1.1,
+            )
+        except openai.AuthenticationError as error:
+            raise LLMServiceError(
+                "Speech provider rejected SPEECH_TOKEN (401). "
+                "Replace it with an active token for the configured provider."
+            ) from error
+        except openai.OpenAIError as error:
+            raise LLMServiceError(
+                f"Speech provider request failed for model {self.model!r}."
+            ) from error
+        if not speech.content:
+            raise LLMServiceError("Speech provider returned an empty audio response.")
         return speech.content

@@ -34,6 +34,11 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, s
                     f"instructions must be {MAX_EXTRA_CHARS} characters or fewer",
                 )
         voice = await speech_service.get_speech(text, instructions)
+        logger.info(
+            "Speech synthesis requested: chat_id=%s text_length=%s",
+            context.chat_id,
+            len(text),
+        )
         await telegram.send_speech(speech=voice, chat_id=context.chat_id)
         return ToolResult(context.call_id, '{"status":"delivered"}')
 
