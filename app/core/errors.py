@@ -14,7 +14,13 @@ class ValidationError(ApplicationError):
 
 
 class UnauthorizedError(ApplicationError):
-    """The user must authorize access to Classroom."""
+    """The user must (re)authorize access to Classroom."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Google authorization expired or was revoked. "
+            "Ask the user to reconnect Google Classroom with /auth and retry."
+        )
 
 
 class ForbiddenError(ApplicationError):
@@ -37,7 +43,20 @@ class UpstreamServiceError(ApplicationError):
         self.status_code = status_code
         self.service = service
         self.body = body
-        super().__init__(f"{service} returned HTTP {status_code}")
+        super().__init__(
+            f"{service} returned HTTP {status_code}{self._reason(body)}"
+        )
+
+    @staticmethod
+    def _reason(body) -> str:
+        """Short upstream reason so the model can diagnose the real failure."""
+        if isinstance(body, dict):
+            error = body.get("error")
+            if isinstance(error, dict):
+                message = error.get("message")
+                if isinstance(message, str) and message.strip():
+                    return f": {message.strip()[:300]}"
+        return ""
 
 
 class ExternalServiceUnavailableError(ApplicationError):
@@ -61,6 +80,19 @@ class ToolArgumentsError(ApplicationError):
         self.name = name
         self.reason = reason
         super().__init__(f"Invalid arguments for {name}: {reason}")
+
+
+class ToolAccessDeniedError(ApplicationError):
+    """The tool exists but is not allowed in the current chat scope."""
+
+    def __init__(self, name: str, scope: str = "group chats") -> None:
+        self.name = name
+        self.scope = scope
+        super().__init__(
+            f"Tool {name} is not available in {scope}. "
+            "Ask the user to write to the bot in a private chat to perform "
+            "this action."
+        )
 
 
 class AgentIterationLimitError(ApplicationError):

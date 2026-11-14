@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "invite_link",
-    "description": "Sends a message with an interactive inline button containing an invite/join URL to a Google Classroom course. Call this tool when the teacher or student asks for a course join link, wants to share an enrollment URL, or needs to provide a clickable button to connect to a class.",
+    "description": "Sends a message with an interactive inline button containing an invite/join URL to a Google Classroom course. Call this tool when the teacher asks for a course join link or wants to share a clickable button to connect to a class.",
     "parameters": {
       "type": "object",
       "properties": {

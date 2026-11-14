@@ -30,9 +30,19 @@ def _check_error(response: httpx.Response):
         raise UnauthorizedError()
 
     if response.status_code == 403:
+        detail = safe_error_detail(response)
+        if "@ProjectPermissionDenied" in detail:
+            raise ForbiddenError(
+                service="Classroom",
+                detail=(
+                    "The assignment was created by another Google Developer project. "
+                    "Create the assignment through this application or configure the "
+                    "OAuth client in the same Google Cloud project."
+                ),
+            )
         raise ForbiddenError(
             service="Classroom",
-            detail=safe_error_detail(response),
+            detail=detail,
         )
 
     if response.is_error:
@@ -126,7 +136,8 @@ class ClassroomClient:
             self,
             telegram_id: int,
             course_id: int,
-            course_work_id: int
+            course_work_id: int,
+            user_id: str | None = None,
     ) -> list[StudentSubmission]:
         logger.info(
             "ClassroomClient.get_submissions called: telegram_id=%s course_id=%s course_work_id=%s",
@@ -136,6 +147,8 @@ class ClassroomClient:
         )
         url = f"{settings.CPP_SERVER_URL}/api/classroom/courses/{course_id}/courseWork/{course_work_id}/studentSubmissions"
         params = {"telegram_id": telegram_id}
+        if user_id is not None:
+            params["userId"] = user_id
 
         try:
             res = await self.http.get(url, params=params)

@@ -10,6 +10,11 @@
           "type": "string",
           "minLength": 1,
           "description": "Text to synthesize and send as a voice message."
+        },
+        "instructions": {
+          "type": "string",
+          "maxLength": 150,
+          "description": "Delivery direction for THIS phrase only: tone, pace, emotion, emphasis, pauses (e.g. 'excited and faster', 'slow and solemn', 'whisper', 'emphasize the deadline'). Maximum 150 characters. The base voice persona is applied automatically — never repeat the text itself or the base persona here. Omit when the default delivery already fits."
         }
       },
       "required": ["text"],

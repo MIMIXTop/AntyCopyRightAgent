@@ -6,6 +6,7 @@ from app.core.logging import logger
 # Telegram delivers album (media group) parts as separate updates within a few
 # hundred milliseconds; wait briefly so every part is collected before processing.
 DEFAULT_AGGREGATION_DELAY = 1.0
+STANDALONE_GROUP_ID = "__standalone__"
 
 
 class MediaGroupBuffer:
@@ -27,7 +28,10 @@ class MediaGroupBuffer:
         self._tasks: dict[tuple[int, str], asyncio.Task] = {}
 
     async def add(self, message) -> None:
-        key = (message.chat.id, message.media_group_id)
+        key = (
+            message.chat.id,
+            message.media_group_id or STANDALONE_GROUP_ID,
+        )
         self._buffers.setdefault(key, []).append(message)
         task = self._tasks.get(key)
         if task is None:

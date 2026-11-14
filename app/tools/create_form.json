@@ -2,16 +2,17 @@
   "type": "function",
   "function": {
     "name": "create_form",
-    "description": "Create a Google Forms form (optionally a graded quiz) with questions. The tool asks for explicit Telegram confirmation before creating anything. After confirmation the created form_id and responder link arrive in an action_result event.",
+    "description": "Create a Google Forms test, quiz, survey, or questionnaire with the complete question list. Use this immediately when the teacher asks to create a test, quiz, контрольная, опрос, анкета, or Google Form, or confirms a previously drafted test. For a test or quiz set is_quiz=true. Do not return another draft instead of calling the tool. The tool always asks for explicit Telegram confirmation before creating anything. After confirmation the created form_id and responder link arrive in an action_result event.",
     "parameters": {
       "type": "object",
       "properties": {
         "title": {"type": "string", "minLength": 1, "description": "Form title shown to respondents."},
         "description": {"type": "string", "description": "Optional form description."},
-        "is_quiz": {"type": "boolean", "description": "True to enable quiz mode with grading (correct answers and points)."},
+        "is_quiz": {"type": "boolean", "description": "Set true for a test, quiz, контрольная, or any form with correct answers, points, or automatic grading. Set false only for an ungraded survey/questionnaire."},
         "questions": {
           "type": "array",
-          "description": "Optional list of questions to add to the new form.",
+          "minItems": 1,
+          "description": "Complete list of questions to add to the form. For a test, include every generated question here.",
           "items": {
             "type": "object",
             "properties": {
@@ -31,7 +32,7 @@
                 "items": {"type": "string", "minLength": 1},
                 "description": "Correct answers for quiz mode. For choice questions each value must exactly match one of options."
               },
-              "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Required together with correct_answers (defaults to 1)."},
+              "points": {"type": "integer", "minimum": 1, "description": "Points for a correct answer. Optional when correct_answers is provided; defaults to 1."},
               "required": {"type": "boolean", "description": "Whether the respondent must answer this question."}
             },
             "required": ["title", "type"],
@@ -39,7 +40,7 @@
           }
         }
       },
-      "required": ["title"],
+      "required": ["title", "is_quiz", "questions"],
       "additionalProperties": false
     }
   }

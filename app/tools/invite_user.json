@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "invite_user",
-    "description": "Sends an email invitation to join the course. Call this when you need to add a student or a second instructor to the course.",
+    "description": "Sends an email invitation to add a teacher to the course.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -17,10 +17,9 @@
         "role": {
           "type": "string",
           "enum": [
-            "STUDENT",
             "TEACHER"
           ],
-          "description": "The user's role in the course. Use STUDENT by default unless otherwise specified."
+          "description": "The invited user's role in the course."
         }
       },
       "required": [

@@ -140,7 +140,14 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
                     file_name="notes.pdf",
                     mime_type="application/pdf",
                     size=123,
-                )
+                ),
+                TelegramAttachment(
+                    file_id="tg-image",
+                    file_name="diagram.png",
+                    mime_type="image/png",
+                    size=456,
+                    kind="photo",
+                ),
             ],
         ),
         {
@@ -152,6 +159,7 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
     )
 
     assert json.loads(result.content)["status"] == "paused"
+    assert json.loads(result.content)["telegram_attachments"] == 2
     pending = service.get_pending_announcement(
         next(iter(service._pending_announcements))
     )
@@ -164,7 +172,10 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
             }
         },
     ]
-    assert pending["telegram_attachments"][0].file_id == "tg-file"
+    assert [attachment.file_id for attachment in pending["telegram_attachments"]] == [
+        "tg-file",
+        "tg-image",
+    ]
     assert telegram.announcement_confirmation["course_name"] == "Test course"
 
 
@@ -218,3 +229,67 @@ async def test_get_topic_list_rejects_course_name_as_id():
             ToolContext(chat_id=1, user_id=42, call_id="call-topic"),
             {"course_id": "Rust: начало"},
         )
+
+
+@pytest.mark.asyncio
+async def test_create_assignment_uses_runtime_attachment_file_ids():
+    """Files attached to the current message must be attached automatically.
+
+    The model has no reliable way to know raw Telegram file_ids, so the tool
+    resolves them from the runtime context instead of trusting invented values.
+    """
+    service = FakeAnnouncementService()
+    registry = ToolRegistry()
+    register_classroom_tools(registry, service, telegram=FakeTelegramService())
+
+    result = await registry.call(
+        "create_assignment",
+        ToolContext(
+            chat_id=1,
+            user_id=42,
+            call_id="call-assignment",
+            attachments=[
+                TelegramAttachment(
+                    file_id="tg-real-file",
+                    file_name="lab.pdf",
+                    mime_type="application/pdf",
+                    size=10,
+                )
+            ],
+        ),
+        {
+            "course_id": "course-1",
+            "title": "Лабораторная работа №1",
+            "telegram_file_ids": ["tg-real-file", "tg-file-from-earlier-turn"],
+        },
+    )
+
+    assert json.loads(result.content)["status"] == "paused"
+    pending = service.get_pending_assignment(
+        next(iter(service._pending_course_works))
+    )
+    # Runtime attachment first, duplicates removed, model-supplied ids kept.
+    assert pending["telegram_file_ids"] == [
+        "tg-real-file",
+        "tg-file-from-earlier-turn",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_assignment_rejects_non_string_file_ids():
+    service = FakeAnnouncementService()
+    registry = ToolRegistry()
+    register_classroom_tools(registry, service, telegram=FakeTelegramService())
+
+    with pytest.raises(ToolArgumentsError, match="telegram_file_ids"):
+        await registry.call(
+            "create_assignment",
+            ToolContext(chat_id=1, user_id=42, call_id="call-assignment-bad"),
+            {
+                "course_id": "course-1",
+                "title": "Задание",
+                "telegram_file_ids": ["file_1", 5],
+            },
+        )
+
+    assert service._pending_course_works == {}
