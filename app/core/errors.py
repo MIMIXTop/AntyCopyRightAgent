@@ -95,6 +95,10 @@ class ToolAccessDeniedError(ApplicationError):
         )
 
 
+class DocumentConversionError(ApplicationError):
+    """A PDF/PPTX could not be read, parsed or converted to text."""
+
+
 class AgentIterationLimitError(ApplicationError):
     def __init__(self, limit: int) -> None:
         self.limit = limit

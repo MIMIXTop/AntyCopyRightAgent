@@ -11,10 +11,12 @@ dependencies = [
     "httpx>=0.28.1",
     "lru-cache>=0.2.3",
     "ollama>=0.6.2",
+    "onnxruntime>=1.32.0",
     "openai>=3.9.0",
     "pillow>=12.3.0",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
+    "pypdfium2>=5.14",
     "python-dotenv>=1.2.3",
     "requests>=2.34.2",
 ]

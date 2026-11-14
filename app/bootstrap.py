@@ -124,7 +124,7 @@ async def build_application(settings: Settings) -> Application:
     register_sheets_tools(registry, sheets)
     register_drive_tools(registry, drive)
     register_forms_tools(registry, forms, telegram)
-    register_document_views(registry, DocumentViewService())
+    register_document_views(registry, DocumentViewService(settings))
 
     async def current_time(context: ToolContext, arguments: dict):
         from app.handlers.get_current_time import get_current_time

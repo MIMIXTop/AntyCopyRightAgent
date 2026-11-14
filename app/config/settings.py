@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     # In groups the agent may only chat, answer questions, search the web and
     # share links/media. Course, Drive, Sheets and Forms tools stay private.
     GROUP_SAFE_MODE: bool = True
+    # Document viewing. Text PDFs are read without machine learning; OCR only
+    # runs for scans and pages without a text layer, so it is safe to keep on.
+    DOCUMENT_OCR_ENABLED: bool = True
+    # PP-OCR recogniser: "eslav" covers Russian/Ukrainian/Belarusian,
+    # "cyrillic" the remaining Cyrillic languages.
+    DOCUMENT_OCR_LANG: str = "eslav"
+    # Table structure extraction is accurate but slow (~70 s for 72 slides).
+    DOCUMENT_TABLE_STRUCTURE: bool = False
+    DOCUMENT_MAX_PAGES: int = 100
+    DOCUMENT_MAX_FILE_MB: int = 30
+    DOCUMENT_MAX_CHARS: int = 50_000
+    # Directory with pre-downloaded docling/rapidocr models. The Docker image
+    # points it at /opt/docling-models; when unset docling downloads on demand.
+    DOCUMENT_ARTIFACTS_PATH: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,

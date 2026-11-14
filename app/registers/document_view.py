@@ -26,7 +26,7 @@ def register_document_views(registry: ToolRegistry, doc_view_service: DocumentVi
             )
 
         if url:
-            view = doc_view_service.convert_to_markdown(url)
+            view = await doc_view_service.convert_to_markdown(url)
         else:
             supported = {".pdf", ".pptx"}
             attachments = [
@@ -47,14 +47,23 @@ def register_document_views(registry: ToolRegistry, doc_view_service: DocumentVi
                     "provide a PDF/PPTX url or attach a PDF/PPTX file",
                 )
             attachment = attachments[0]
-            view = doc_view_service.convert_bytes_to_markdown(
+            view = await doc_view_service.convert_bytes_to_markdown(
                 attachment.data,
                 attachment.file_name or "document",
             )
 
         return ToolResult(
             context.call_id,
-            json.dumps({"status": "ok", "markdown": view}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "status": "ok",
+                    "engine": view.engine,
+                    "pages": view.pages,
+                    "truncated": view.truncated,
+                    "markdown": view.markdown,
+                },
+                ensure_ascii=False,
+            ),
         )
 
     registry.register(
