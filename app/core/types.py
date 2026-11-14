@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from typing import Protocol, Any
 
 from app.agent.models import Message, LLMResponse
@@ -14,11 +14,11 @@ class LLMClient(Protocol):
 
 
 class HistoryStore(Protocol):
-    async def get(self, chat_id: int) -> list[Any]:
+    async def get(self, conversation_id: Hashable) -> list[Any]:
         ...
 
-    async def append(self, chat_id: int, *message: Any) -> None:
+    async def append(self, conversation_id: Hashable, *message: Any) -> None:
         ...
 
-    async def clear(self, chat_id: int) -> None:
+    async def clear(self, conversation_id: Hashable) -> None:
         ...

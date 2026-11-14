@@ -1,0 +1,22 @@
+{
+  "type": "function",
+  "function": {
+    "name": "send_image",
+    "description": "Sends a previously downloaded image to the user as a photo with an optional caption. Requires an image_id returned by download_image.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "image_id": {
+          "type": "string",
+          "description": "Exact image_id returned by download_image. It expires after about 10 minutes; if it is missing, call download_image again."
+        },
+        "caption": {
+          "type": "string",
+          "description": "Optional photo caption shown under the image, max 1024 characters."
+        }
+      },
+      "required": ["image_id"],
+      "additionalProperties": false
+    }
+  }
+}

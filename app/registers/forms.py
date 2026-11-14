@@ -131,6 +131,8 @@ def register_forms_tools(
             description=description,
             is_quiz=is_quiz,
             questions=questions,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         await telegram.request_form_creation(
@@ -140,6 +142,7 @@ def register_forms_tools(
             description=description,
             is_quiz=is_quiz,
             questions=questions,
+            delivery=context.delivery,
         )
 
         return _paused_result(context.call_id, pending_id)
@@ -155,6 +158,8 @@ def register_forms_tools(
             form_id=form_id,
             form_title=form.info.title,
             question=question,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         await telegram.request_form_question(
@@ -162,6 +167,7 @@ def register_forms_tools(
             pending_id=pending_id,
             form_title=form.info.title,
             question=question,
+            delivery=context.delivery,
         )
 
         return _paused_result(context.call_id, pending_id)
@@ -175,12 +181,15 @@ def register_forms_tools(
             telegram_id=context.user_id,
             form_id=form_id,
             form_title=form.info.title,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         await telegram.request_form_publish(
             chat_id=context.chat_id,
             pending_id=pending_id,
             form_title=form.info.title,
+            delivery=context.delivery,
         )
 
         return _paused_result(context.call_id, pending_id)

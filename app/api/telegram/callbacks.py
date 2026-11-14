@@ -1,7 +1,8 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 
-from app.agent.models import Message
+from app.agent.conversation import conversation_key
+from app.agent.models import DeliveryContext, GROUP_CHAT_TYPES, Message
 from app.api.classroom.service import ClassroomService
 from app.api.forms.service import FormsService
 from app.core.errors import ApplicationError
@@ -18,10 +19,71 @@ def create_callback_router(
     telegram: TelegramService,
     agent: AgentService | None = None,
     forms: FormsService | None = None,
+    group_safe_mode: bool = True,
 ) -> Router:
     router = Router()
 
-    async def notify_agent(call: CallbackQuery, action: str, status: str, success: bool, details: str):
+    def _chat_id(call: CallbackQuery, data: dict | None = None) -> int:
+        if data and data.get("chat_id"):
+            return data["chat_id"]
+        if call.message is not None:
+            return call.message.chat.id
+        return call.from_user.id
+
+    def _chat_type(call: CallbackQuery, data: dict | None = None) -> str:
+        if data and data.get("chat_type"):
+            return data["chat_type"]
+        if call.message is not None:
+            return call.message.chat.type
+        return "private" if _chat_id(call, data) == call.from_user.id else "group"
+
+    def _delivery(
+        call: CallbackQuery,
+        data: dict | None = None,
+        *,
+        ephemeral: bool = True,
+    ) -> DeliveryContext:
+        return DeliveryContext(
+            chat_id=_chat_id(call, data),
+            user_id=call.from_user.id,
+            chat_type=_chat_type(call, data),
+            ephemeral=ephemeral,
+            callback_query_id=call.id,
+        )
+
+    def _conversation_key(call: CallbackQuery, data: dict | None = None):
+        return conversation_key(
+            _chat_type(call, data),
+            _chat_id(call, data),
+            call.from_user.id,
+        )
+
+    async def _reject_foreign_button(call: CallbackQuery) -> None:
+        await call.answer("Эта кнопка не для вас", show_alert=True)
+
+    def _group_action_blocked(data: dict | None) -> bool:
+        """Group confirmations are disabled while the safe group mode is on."""
+        return bool(
+            group_safe_mode
+            and data
+            and data.get("chat_type") in GROUP_CHAT_TYPES
+        )
+
+    async def _reject_group_action(call: CallbackQuery) -> None:
+        await call.answer(
+            "Действия с курсами и Google-сервисами в группе отключены. "
+            "Напишите боту в личные сообщения.",
+            show_alert=True,
+        )
+
+    async def notify_agent(
+        call: CallbackQuery,
+        action: str,
+        status: str,
+        success: bool,
+        details: str,
+        data: dict | None = None,
+    ):
         event = {
             "type": "action_result",
             "action": action,
@@ -31,19 +93,21 @@ def create_callback_router(
         }
         if agent is None:
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", json.dumps(event, ensure_ascii=False)),
             )
             return
         response = await agent.resume_after_action(
-            chat_id=call.message.chat.id,
+            chat_id=_chat_id(call, data),
             user_id=call.from_user.id,
             event=event,
+            delivery=_delivery(call, data),
         )
         if response:
             await telegram.send_message(
-                chat_id=call.message.chat.id,
+                chat_id=_chat_id(call, data),
                 text=response,
+                delivery=_delivery(call, data),
             )
 
     @router.callback_query(F.data.startswith("agent:choice:"))
@@ -56,14 +120,15 @@ def create_callback_router(
             return
 
         choice = telegram.claim_choice(choice_id, option_index, call.from_user.id)
-        if not choice or choice["chat_id"] != call.message.chat.id:
+        if not choice or choice["chat_id"] != _chat_id(call, choice):
             await call.answer("Выбор устарел", show_alert=True)
             return
 
         selected = choice["selected"]
         await call.answer()
-        await call.message.edit_text(
-            f"{choice['question']}\n\nВыбрано: {selected['label']}"
+        await telegram.edit_status(call,
+            f"{choice['question']}\n\nВыбрано: {selected['label']}",
+            chat_id=_chat_id(call, choice),
         )
         await notify_agent(
             call,
@@ -78,6 +143,7 @@ def create_callback_router(
                 },
                 ensure_ascii=False,
             ),
+            data=choice,
         )
 
     @router.callback_query(F.data.startswith("course:create:confirm"))
@@ -90,9 +156,17 @@ def create_callback_router(
         if not data:
             await call.answer("Данные устарели", show_alert=True)
             return
+        if _group_action_blocked(data):
+            await _reject_group_action(call)
+            return
+        if data["telegram_id"] != call.from_user.id:
+            await _reject_foreign_button(call)
+            return
 
-        await call.message.edit_text(
-            f"⏳ Создаю курс «{data['name']}»..."
+        await call.answer()
+        await telegram.edit_status(call,
+            f"⏳ Создаю курс «{data['name']}»...",
+            chat_id=_chat_id(call, data),
         )
 
         try:
@@ -103,26 +177,26 @@ def create_callback_router(
                 course_section=data["section"],
             )
 
-            await call.message.edit_text(
-                f"✅ Курс «{data['name']}» успешно создан!"
+            await telegram.edit_status(call,
+                f"✅ Курс «{data['name']}» успешно создан!",
+                chat_id=_chat_id(call, data),
             )
 
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Пользователь подтвердил создание курса '{data['name']}'. Курс успешно создан."),
             )
-            await notify_agent(call, "create_course", "confirmed", True, f"Курс '{data['name']}' успешно создан.")
+            await notify_agent(call, "create_course", "confirmed", True, f"Курс '{data['name']}' успешно создан.", data=data)
 
         except ApplicationError as e:
-            await call.message.edit_text("❌ Ошибка при создании курса.")
+            await telegram.edit_status(call, "❌ Ошибка при создании курса.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Пользователь подтвердил создание, но произошла ошибка: {e}")
             )
-            await notify_agent(call, "create_course", "confirmed", False, str(e))
+            await notify_agent(call, "create_course", "confirmed", False, str(e), data=data)
         finally:
             classroom.remove_pending_course(pending_id)
-            await call.answer()
 
 
     @router.callback_query(F.data.startswith("course:create:cancel:"))
@@ -131,21 +205,33 @@ def create_callback_router(
         logger.info("Course creation cancellation callback: pending_id=%s", pending_id)
         data = classroom.get_pending_course(pending_id)
 
-        if data:
-            await call.message.edit_text(
-                f"❌ Создание курса «{data['name']}» отменено."
-            )
-            await history_store.append(
-                call.message.chat.id,
-                Message("system", f"Пользователь ОТМЕНИЛ создание курса '{data['name']}'.")
-            )
-            await notify_agent(call, "create_course", "cancelled", False, f"Создание курса '{data['name']}' отменено.")
-            classroom.remove_pending_course(pending_id)
+        if not data:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+        if data["telegram_id"] != call.from_user.id:
+            await _reject_foreign_button(call)
+            return
+
+        await call.answer()
+        await telegram.edit_status(call,
+            f"❌ Создание курса «{data['name']}» отменено.",
+            chat_id=_chat_id(call, data),
+        )
+        await history_store.append(
+            _conversation_key(call, data),
+            Message("system", f"Пользователь ОТМЕНИЛ создание курса '{data['name']}'.")
+        )
+        await notify_agent(call, "create_course", "cancelled", False, f"Создание курса '{data['name']}' отменено.", data=data)
+        classroom.remove_pending_course(pending_id)
 
     @router.callback_query(F.data.startswith("course:announcement:create:confirm:"))
     async def confirm_course_announcement_creation(call: CallbackQuery):
         pending_id = call.data.split(":")[-1]
         logger.info("Course creation confirm callback: pending_id=%s", pending_id)
+        pending = classroom.get_pending_announcement(pending_id)
+        if pending and _group_action_blocked(pending):
+            await _reject_group_action(call)
+            return
         data = classroom.claim_pending_announcement(pending_id, call.from_user.id)
 
         if not data:
@@ -153,7 +239,7 @@ def create_callback_router(
             return
 
         await call.answer()
-        await call.message.edit_text(f"⏳ Создаю анонса...")
+        await telegram.edit_status(call, f"⏳ Создаю анонса...", chat_id=_chat_id(call, data))
 
         materials = []
         telegram_attachments = data.get("telegram_attachments", [])
@@ -206,20 +292,20 @@ def create_callback_router(
                 materials=data.get("materials", []) + materials,
             )
 
-            await call.message.edit_text("✅ Анонс успешно создан")
+            await telegram.edit_status(call, "✅ Анонс успешно создан", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Пользователь подтвердил создание анонса курса '{data['course_id']}'. Анонс успешно создан.")
             )
-            await notify_agent(call, "create_announcement", "confirmed", True, "Анонс успешно создан.")
+            await notify_agent(call, "create_announcement", "confirmed", True, "Анонс успешно создан.", data=data)
 
         except ApplicationError as e:
-            await call.message.edit_text("❌ Ошибка при создании анонса.")
+            await telegram.edit_status(call, "❌ Ошибка при создании анонса.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Пользователь подтвердил создание, но произошла ошибка: {e}")
             )
-            await notify_agent(call, "create_announcement", "confirmed", False, str(e))
+            await notify_agent(call, "create_announcement", "confirmed", False, str(e), data=data)
 
         classroom.remove_pending_announcement(pending_id)
 
@@ -229,28 +315,40 @@ def create_callback_router(
         logger.info("Course creation cancellation callback: pending_id=%s", pending_id)
         data = classroom.get_pending_announcement(pending_id)
 
-        if data:
-            await call.answer()
-            await call.message.edit_text(f"❌ Создание анонса отменено.")
-            await history_store.append(
-                call.message.chat.id,
-                Message(
-                    "system", f"Пользователь ОТМЕНИЛ создание анонса для курса '{data['course_id']}'." )
-            )
-            await notify_agent(call, "create_announcement", "cancelled", False, "Создание анонса отменено.")
-            classroom.remove_pending_announcement(pending_id)
+        if not data:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+        if data["telegram_id"] != call.from_user.id:
+            await _reject_foreign_button(call)
+            return
+
+        await call.answer()
+        await telegram.edit_status(call, f"❌ Создание анонса отменено.", chat_id=_chat_id(call, data))
+        await history_store.append(
+            _conversation_key(call, data),
+            Message(
+                "system", f"Пользователь ОТМЕНИЛ создание анонса для курса '{data['course_id']}'." )
+        )
+        await notify_agent(call, "create_announcement", "cancelled", False, "Создание анонса отменено.", data=data)
+        classroom.remove_pending_announcement(pending_id)
 
     @router.callback_query(F.data.startswith("course:work:create:cancel:"))
     async def cancel_work_creation(call: CallbackQuery):
         pending_id = call.data.split(":")[-1]
         data = classroom.get_pending_assignment(pending_id)
+        if not data:
+            await call.answer("Данные устарели", show_alert=True)
+            return
+        if data["telegram_id"] != call.from_user.id:
+            await _reject_foreign_button(call)
+            return
         await history_store.append(
-            call.message.chat.id,
+            _conversation_key(call, data),
             Message(
                 "system", f"Пользователь ОТМЕНИЛ создание работы для курса '{data['course_id']}'.")
         )
-        await notify_agent(call, "create_assignment", "cancelled", False, "Создание задания отменено.")
-        await call.message.edit_text("❌ Создание задания отменено.")
+        await notify_agent(call, "create_assignment", "cancelled", False, "Создание задания отменено.", data=data)
+        await telegram.edit_status(call, "❌ Создание задания отменено.", chat_id=_chat_id(call, data))
         await call.answer()
         classroom.remove_pending_assignment(pending_id)
 
@@ -261,36 +359,48 @@ def create_callback_router(
         if not data:
             await call.answer("Ошибка: действие устарело.", show_alert=True)
             return
+        if _group_action_blocked(data):
+            await _reject_group_action(call)
+            return
+        if data["telegram_id"] != call.from_user.id:
+            await _reject_foreign_button(call)
+            return
 
-        await call.message.edit_text("⏳ Загружаю материалы и публикую задание...")
+        await call.answer()
+        await telegram.edit_status(call, "⏳ Загружаю материалы и публикую задание...", chat_id=_chat_id(call, data))
         materials = []
 
-        for link_url in data.get("links", []):
-            if link_url.startswith("http"):
-                materials.append({"link": {"url": link_url}})
-
-        tg_file_ids = data.get("telegram_file_ids", [])
-        if tg_file_ids:
-            course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
-            folder_id = course.teacher_folder.id if course.teacher_folder else None
-
-            for fid in tg_file_ids:
-                fname, fbytes = await telegram.get_file_content(fid)
-                drive_file = await classroom.upload_to_drive(
-                    telegram_id=data["telegram_id"],
-                    file_name=fname,
-                    content=fbytes,
-                    mime_type="application/octet-stream",
-                    parent_folder_id=folder_id
-                )
-                materials.append({
-                    "driveFile": {
-                        "driveFile": {"id": drive_file["id"]},
-                        "shareMode": "VIEW"
-                    }
-                })
-
         try:
+            for link_url in data.get("links", []):
+                if link_url.startswith("http"):
+                    materials.append({"link": {"url": link_url}})
+
+            tg_file_ids = data.get("telegram_file_ids", [])
+            if tg_file_ids:
+                course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
+                folder_id = course.teacher_folder.id if course.teacher_folder else None
+
+                for fid in tg_file_ids:
+                    logger.info(
+                        "Uploading assignment attachment: pending_id=%s file_id=%s",
+                        pending_id,
+                        fid,
+                    )
+                    fname, fbytes = await telegram.get_file_content(fid)
+                    drive_file = await classroom.upload_to_drive(
+                        telegram_id=data["telegram_id"],
+                        file_name=fname,
+                        content=fbytes,
+                        mime_type="application/octet-stream",
+                        parent_folder_id=folder_id
+                    )
+                    materials.append({
+                        "driveFile": {
+                            "driveFile": {"id": drive_file["id"]},
+                            "shareMode": "VIEW"
+                        }
+                    })
+
             res = await classroom.create_assignment(
                 telegram_id=data["telegram_id"],
                 course_id=data["course_id"],
@@ -302,22 +412,26 @@ def create_callback_router(
                 materials=materials if materials else None,
                 topic_id=data.get("topic_id"),
             )
-            await call.message.edit_text(
-                f"✅ Задание *«{data['title']}»* успешно опубликовано!"
+            await telegram.edit_status(call,
+                f"✅ Задание *«{data['title']}»* успешно опубликовано!",
+                chat_id=_chat_id(call, data),
             )
 
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Задание '{data['title']}' успешно создано в курсе {data['course_id']}.")
             )
-            await notify_agent(call, "create_assignment", "confirmed", True, f"Задание '{data['title']}' успешно создано.")
+            await notify_agent(call, "create_assignment", "confirmed", True, f"Задание '{data['title']}' успешно создано.", data=data)
         except Exception as e:
-            logger.error(f"Ошибка при создании задания: {e}")
-            await call.message.edit_text("❌ Ошибка при создании задания.")
-            await notify_agent(call, "create_assignment", "confirmed", False, str(e))
-
-        classroom.remove_pending_assignment(pending_id)
-        await call.answer()
+            logger.error(
+                "Assignment creation failed: pending_id=%s error=%s",
+                pending_id,
+                e,
+            )
+            await telegram.edit_status(call, "❌ Ошибка при создании задания.", chat_id=_chat_id(call, data))
+            await notify_agent(call, "create_assignment", "confirmed", False, str(e), data=data)
+        finally:
+            classroom.remove_pending_assignment(pending_id)
 
     @router.callback_query(F.data.startswith("course:material:create:confirm:"))
     async def confirm_material_creation(call: CallbackQuery):
@@ -326,28 +440,33 @@ def create_callback_router(
         if not data or data["telegram_id"] != call.from_user.id:
             await call.answer("Данные устарели", show_alert=True)
             return
+        if _group_action_blocked(data):
+            await _reject_group_action(call)
+            return
 
         await call.answer()
-        await call.message.edit_text("⏳ Загружаю материалы и создаю материал курса...")
+        await telegram.edit_status(call, "⏳ Загружаю материалы и создаю материал курса...", chat_id=_chat_id(call, data))
         materials = list(data.get("materials", []))
         try:
-            course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
-            folder_id = course.teacher_folder.id if course.teacher_folder else None
-            for attachment in data.get("telegram_attachments", []):
-                file_name, file_bytes = await telegram.get_file_content(attachment.file_id)
-                drive_file = await classroom.upload_to_drive(
-                    telegram_id=data["telegram_id"],
-                    file_name=attachment.file_name or file_name,
-                    content=file_bytes,
-                    mime_type=attachment.mime_type or "application/octet-stream",
-                    parent_folder_id=folder_id,
-                )
-                materials.append({
-                    "driveFile": {
-                        "driveFile": {"id": drive_file["id"]},
-                        "shareMode": "VIEW",
-                    }
-                })
+            attachments = data.get("telegram_attachments", [])
+            if attachments:
+                course = await classroom.get_concrete_course(data["telegram_id"], data["course_id"])
+                folder_id = course.teacher_folder.id if course.teacher_folder else None
+                for attachment in attachments:
+                    file_name, file_bytes = await telegram.get_file_content(attachment.file_id)
+                    drive_file = await classroom.upload_to_drive(
+                        telegram_id=data["telegram_id"],
+                        file_name=attachment.file_name or file_name,
+                        content=file_bytes,
+                        mime_type=attachment.mime_type or "application/octet-stream",
+                        parent_folder_id=folder_id,
+                    )
+                    materials.append({
+                        "driveFile": {
+                            "driveFile": {"id": drive_file["id"]},
+                            "shareMode": "VIEW",
+                        }
+                    })
 
             await classroom.create_course_material(
                 telegram_id=data["telegram_id"],
@@ -357,16 +476,16 @@ def create_callback_router(
                 materials=materials,
                 topic_id=data.get("topic_id"),
             )
-            await call.message.edit_text("✅ Материал курса успешно создан.")
+            await telegram.edit_status(call, "✅ Материал курса успешно создан.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Материал '{data['title']}' успешно создан."),
             )
-            await notify_agent(call, "create_material", "confirmed", True, f"Материал '{data['title']}' успешно создан.")
+            await notify_agent(call, "create_material", "confirmed", True, f"Материал '{data['title']}' успешно создан.", data=data)
         except ApplicationError as error:
             logger.error("Material creation failed: %s", error)
-            await call.message.edit_text("❌ Не удалось создать материал курса.")
-            await notify_agent(call, "create_material", "confirmed", False, str(error))
+            await telegram.edit_status(call, "❌ Не удалось создать материал курса.", chat_id=_chat_id(call, data))
+            await notify_agent(call, "create_material", "confirmed", False, str(error), data=data)
         finally:
             classroom.remove_pending_material(pending_id)
 
@@ -378,8 +497,8 @@ def create_callback_router(
             await call.answer("Данные устарели", show_alert=True)
             return
         await call.answer()
-        await call.message.edit_text("❌ Создание материала отменено.")
-        await notify_agent(call, "create_material", "cancelled", False, "Создание материала отменено.")
+        await telegram.edit_status(call, "❌ Создание материала отменено.", chat_id=_chat_id(call, data))
+        await notify_agent(call, "create_material", "cancelled", False, "Создание материала отменено.", data=data)
         classroom.remove_pending_material(pending_id)
 
     @router.callback_query(F.data.startswith("course:topic:creat:confirm:"))
@@ -389,6 +508,9 @@ def create_callback_router(
         if not data or data["telegram_id"] != call.from_user.id:
             await call.answer("Данные устарели", show_alert=True)
             return
+        if _group_action_blocked(data):
+            await _reject_group_action(call)
+            return
 
         await call.answer()
         try:
@@ -397,22 +519,23 @@ def create_callback_router(
                 course_id=data["course_id"],
                 topic_name=data["topic_name"],
             )
-            await call.message.edit_text(
-                f"✅ Раздел «{data['topic_name']}» успешно создан."
+            await telegram.edit_status(call,
+                f"✅ Раздел «{data['topic_name']}» успешно создан.",
+                chat_id=_chat_id(call, data),
             )
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Раздел '{data['topic_name']}' успешно создан."),
             )
-            await notify_agent(call, "create_topic", "confirmed", True, f"Раздел '{data['topic_name']}' успешно создан.")
+            await notify_agent(call, "create_topic", "confirmed", True, f"Раздел '{data['topic_name']}' успешно создан.", data=data)
         except ApplicationError as error:
             logger.error("Topic creation failed: %s", error)
-            await call.message.edit_text("❌ Не удалось создать раздел.")
+            await telegram.edit_status(call, "❌ Не удалось создать раздел.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Создание раздела не выполнено: {error}"),
             )
-            await notify_agent(call, "create_topic", "confirmed", False, str(error))
+            await notify_agent(call, "create_topic", "confirmed", False, str(error), data=data)
         finally:
             classroom.remove_pending_topic(pending_id)
 
@@ -424,14 +547,17 @@ def create_callback_router(
             await call.answer("Данные устарели", show_alert=True)
             return
         await call.answer()
-        await call.message.edit_text("❌ Создание раздела отменено.")
-        await notify_agent(call, "create_topic", "cancelled", False, "Создание раздела отменено.")
+        await telegram.edit_status(call, "❌ Создание раздела отменено.", chat_id=_chat_id(call, data))
+        await notify_agent(call, "create_topic", "cancelled", False, "Создание раздела отменено.", data=data)
         classroom.remove_pending_topic(pending_id)
 
     async def apply_update(call: CallbackQuery, pending_id: str, resource: str):
         data = classroom.get_pending_update(pending_id)
         if not data or data["resource"] != resource or data["telegram_id"] != call.from_user.id:
             await call.answer("Данные устарели", show_alert=True)
+            return
+        if _group_action_blocked(data):
+            await _reject_group_action(call)
             return
 
         await call.answer()
@@ -534,19 +660,19 @@ def create_callback_router(
                 )
                 message = "✅ Задание успешно изменено."
 
-            await call.message.edit_text(message)
+            await telegram.edit_status(call, message, chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", message),
             )
-            await notify_agent(call, f"update_{resource}", "confirmed", True, message)
+            await notify_agent(call, f"update_{resource}", "confirmed", True, message, data=data)
         except ApplicationError as error:
-            await call.message.edit_text("❌ Не удалось изменить объект.")
+            await telegram.edit_status(call, "❌ Не удалось изменить объект.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Изменение не выполнено: {error}"),
             )
-            await notify_agent(call, f"update_{resource}", "confirmed", False, str(error))
+            await notify_agent(call, f"update_{resource}", "confirmed", False, str(error), data=data)
         finally:
             classroom.remove_pending_update(pending_id)
 
@@ -556,12 +682,12 @@ def create_callback_router(
             await call.answer("Данные устарели", show_alert=True)
             return
         await call.answer()
-        await call.message.edit_text("❌ Изменение отменено.")
+        await telegram.edit_status(call, "❌ Изменение отменено.", chat_id=_chat_id(call, data))
         await history_store.append(
-            call.message.chat.id,
+            _conversation_key(call, data),
             Message("system", "Пользователь отменил изменение."),
         )
-        await notify_agent(call, f"update_{resource}", "cancelled", False, "Изменение отменено.")
+        await notify_agent(call, f"update_{resource}", "cancelled", False, "Изменение отменено.", data=data)
         classroom.remove_pending_update(pending_id)
 
     @router.callback_query(F.data.startswith("course:update:confirm:"))
@@ -614,9 +740,12 @@ def create_callback_router(
             if not data or data["telegram_id"] != call.from_user.id:
                 await call.answer("Данные устарели", show_alert=True)
                 return
+            if _group_action_blocked(data):
+                await _reject_group_action(call)
+                return
 
             await call.answer()
-            await call.message.edit_text("⏳ Создаю форму...")
+            await telegram.edit_status(call, "⏳ Создаю форму...", chat_id=_chat_id(call, data))
             try:
                 logger.info(
                     "Creating confirmed Google Form: pending_id=%s telegram_id=%s "
@@ -636,16 +765,17 @@ def create_callback_router(
                 )
                 responder_uri = form.responder_uri
 
-                await call.message.edit_text(f"✅ Форма *«{data['title']}»* успешно создана!")
+                await telegram.edit_status(call, f"✅ Форма *«{data['title']}»* успешно создана!", chat_id=_chat_id(call, data))
                 if responder_uri:
                     await telegram.send_form_link(
-                        chat_id=call.message.chat.id,
+                        chat_id=_chat_id(call, data),
                         title=data["title"],
                         responder_uri=responder_uri,
+                        delivery=_delivery(call, data),
                     )
 
                 await history_store.append(
-                    call.message.chat.id,
+                    _conversation_key(call, data),
                     Message(
                         "system",
                         f"Пользователь подтвердил создание формы '{data['title']}'. "
@@ -668,22 +798,24 @@ def create_callback_router(
                         },
                         ensure_ascii=False,
                     ),
+                    data=data,
                 )
             except ApplicationError as error:
                 logger.error("Form creation failed: %s", error)
-                await call.message.edit_text("❌ Не удалось создать форму.")
+                await telegram.edit_status(call, "❌ Не удалось создать форму.", chat_id=_chat_id(call, data))
                 await history_store.append(
-                    call.message.chat.id,
+                    _conversation_key(call, data),
                     Message("system", f"Создание формы не выполнено: {error}"),
                 )
-                await notify_agent(call, "create_form", "confirmed", False, str(error))
+                await notify_agent(call, "create_form", "confirmed", False, str(error), data=data)
             except Exception:
                 logger.exception(
                     "Unexpected Google Form creation failure: pending_id=%s",
                     pending_id,
                 )
-                await call.message.edit_text(
-                    "❌ Не удалось создать форму из-за внутренней ошибки."
+                await telegram.edit_status(call,
+                    "❌ Не удалось создать форму из-за внутренней ошибки.",
+                    chat_id=_chat_id(call, data),
                 )
                 await notify_agent(
                     call,
@@ -691,6 +823,7 @@ def create_callback_router(
                     "confirmed",
                     False,
                     "Внутренняя ошибка при создании Google Forms.",
+                    data=data,
                 )
             finally:
                 forms.remove_pending_form(pending_id)
@@ -703,9 +836,9 @@ def create_callback_router(
                 await call.answer("Данные устарели", show_alert=True)
                 return
             await call.answer()
-            await call.message.edit_text(f"❌ Создание формы *«{data['title']}»* отменено.")
+            await telegram.edit_status(call, f"❌ Создание формы *«{data['title']}»* отменено.", chat_id=_chat_id(call, data))
             await history_store.append(
-                call.message.chat.id,
+                _conversation_key(call, data),
                 Message("system", f"Пользователь ОТМЕНИЛ создание формы '{data['title']}'."),
             )
             await notify_agent(
@@ -714,6 +847,7 @@ def create_callback_router(
                 "cancelled",
                 False,
                 f"Создание формы '{data['title']}' отменено.",
+                data=data,
             )
             forms.remove_pending_form(pending_id)
 
@@ -725,18 +859,21 @@ def create_callback_router(
             if not data or data["telegram_id"] != call.from_user.id:
                 await call.answer("Данные устарели", show_alert=True)
                 return
+            if _group_action_blocked(data):
+                await _reject_group_action(call)
+                return
 
             await call.answer()
-            await call.message.edit_text("⏳ Добавляю вопрос...")
+            await telegram.edit_status(call, "⏳ Добавляю вопрос...", chat_id=_chat_id(call, data))
             try:
                 await forms.add_question(
                     telegram_id=data["telegram_id"],
                     form_id=data["form_id"],
                     question_spec=data["question"],
                 )
-                await call.message.edit_text("✅ Вопрос успешно добавлен.")
+                await telegram.edit_status(call, "✅ Вопрос успешно добавлен.", chat_id=_chat_id(call, data))
                 await history_store.append(
-                    call.message.chat.id,
+                    _conversation_key(call, data),
                     Message(
                         "system",
                         f"Пользователь подтвердил добавление вопроса '{data['question']['title']}' "
@@ -755,11 +892,12 @@ def create_callback_router(
                         },
                         ensure_ascii=False,
                     ),
+                    data=data,
                 )
             except ApplicationError as error:
                 logger.error("Form question addition failed: %s", error)
-                await call.message.edit_text("❌ Не удалось добавить вопрос.")
-                await notify_agent(call, "add_form_question", "confirmed", False, str(error))
+                await telegram.edit_status(call, "❌ Не удалось добавить вопрос.", chat_id=_chat_id(call, data))
+                await notify_agent(call, "add_form_question", "confirmed", False, str(error), data=data)
             finally:
                 forms.remove_pending_question(pending_id)
 
@@ -771,8 +909,8 @@ def create_callback_router(
                 await call.answer("Данные устарели", show_alert=True)
                 return
             await call.answer()
-            await call.message.edit_text("❌ Добавление вопроса отменено.")
-            await notify_agent(call, "add_form_question", "cancelled", False, "Добавление вопроса отменено.")
+            await telegram.edit_status(call, "❌ Добавление вопроса отменено.", chat_id=_chat_id(call, data))
+            await notify_agent(call, "add_form_question", "cancelled", False, "Добавление вопроса отменено.", data=data)
             forms.remove_pending_question(pending_id)
 
         @router.callback_query(F.data.startswith("form:publish:confirm:"))
@@ -783,9 +921,12 @@ def create_callback_router(
             if not data or data["telegram_id"] != call.from_user.id:
                 await call.answer("Данные устарели", show_alert=True)
                 return
+            if _group_action_blocked(data):
+                await _reject_group_action(call)
+                return
 
             await call.answer()
-            await call.message.edit_text("⏳ Публикую форму...")
+            await telegram.edit_status(call, "⏳ Публикую форму...", chat_id=_chat_id(call, data))
             try:
                 await forms.publish_form(
                     telegram_id=data["telegram_id"],
@@ -798,16 +939,17 @@ def create_callback_router(
                 except ApplicationError:
                     logger.warning("Failed to refresh form after publish: form_id=%s", data["form_id"])
 
-                await call.message.edit_text(f"✅ Форма *«{data['form_title']}»* опубликована!")
+                await telegram.edit_status(call, f"✅ Форма *«{data['form_title']}»* опубликована!", chat_id=_chat_id(call, data))
                 if responder_uri:
                     await telegram.send_form_link(
-                        chat_id=call.message.chat.id,
+                        chat_id=_chat_id(call, data),
                         title=data["form_title"],
                         responder_uri=responder_uri,
+                        delivery=_delivery(call, data),
                     )
 
                 await history_store.append(
-                    call.message.chat.id,
+                    _conversation_key(call, data),
                     Message(
                         "system",
                         f"Пользователь подтвердил публикацию формы '{data['form_title']}' "
@@ -827,11 +969,12 @@ def create_callback_router(
                         },
                         ensure_ascii=False,
                     ),
+                    data=data,
                 )
             except ApplicationError as error:
                 logger.error("Form publish failed: %s", error)
-                await call.message.edit_text("❌ Не удалось опубликовать форму.")
-                await notify_agent(call, "publish_form", "confirmed", False, str(error))
+                await telegram.edit_status(call, "❌ Не удалось опубликовать форму.", chat_id=_chat_id(call, data))
+                await notify_agent(call, "publish_form", "confirmed", False, str(error), data=data)
             finally:
                 forms.remove_pending_publish(pending_id)
 
@@ -843,8 +986,8 @@ def create_callback_router(
                 await call.answer("Данные устарели", show_alert=True)
                 return
             await call.answer()
-            await call.message.edit_text("❌ Публикация формы отменена.")
-            await notify_agent(call, "publish_form", "cancelled", False, "Публикация формы отменена.")
+            await telegram.edit_status(call, "❌ Публикация формы отменена.", chat_id=_chat_id(call, data))
+            await notify_agent(call, "publish_form", "cancelled", False, "Публикация формы отменена.", data=data)
             forms.remove_pending_publish(pending_id)
 
     return router

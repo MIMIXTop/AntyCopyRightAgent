@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "function": {
+    "name": "download_image",
+    "description": "Downloads an image from a direct HTTP(S) link on the internet and keeps it in a short-lived store. Returns an image_id plus metadata (no image bytes). Use it right before send_image whenever the teacher wants an internet picture in this chat.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "image_url": {
+          "type": "string",
+          "description": "Direct link to an image file (ends with .jpg/.png/.gif etc., or an image CDN link), never a web page. Take it from search_images results or from the teacher's message."
+        }
+      },
+      "required": ["image_url"],
+      "additionalProperties": false
+    }
+  }
+}

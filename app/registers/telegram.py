@@ -15,7 +15,11 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, s
         if not isinstance(text, str) or not text.strip():
             raise ToolArgumentsError("send_message", "text is required")
 
-        await telegram.send_message(text=text, chat_id=context.chat_id)
+        await telegram.send_message(
+            text=text,
+            chat_id=context.chat_id,
+            delivery=context.delivery,
+        )
         return ToolResult(context.call_id, '{"status":"delivered"}')
 
     async def speech(context: ToolContext, args: dict):
@@ -39,7 +43,11 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, s
             context.chat_id,
             len(text),
         )
-        await telegram.send_speech(speech=voice, chat_id=context.chat_id)
+        await telegram.send_speech(
+            speech=voice,
+            chat_id=context.chat_id,
+            delivery=context.delivery,
+        )
         return ToolResult(context.call_id, '{"status":"delivered"}')
 
     async def ask_choice(context: ToolContext, args: dict):
@@ -68,6 +76,7 @@ def register_telegram_tools(registry: ToolRegistry, telegram: TelegramService, s
             user_id=context.user_id,
             question=question,
             options=options,
+            delivery=context.delivery,
         )
         return ToolResult(
             context.call_id,

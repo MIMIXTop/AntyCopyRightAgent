@@ -154,5 +154,8 @@ class OpenAIAdapter(LLMClient):
                 details.append(attachment.mime_type)
             if attachment.size is not None:
                 details.append(f"{attachment.size} байт")
+            file_id = getattr(attachment, "file_id", None)
+            if file_id:
+                details.append(f"file_id={file_id}")
             lines.append(f"{index}. " + " — ".join(details))
         return "\n".join(lines)

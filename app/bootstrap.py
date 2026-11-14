@@ -3,9 +3,11 @@ import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
 from openai import AsyncOpenAI
 
 from app.agent.history import InMemoryHistoryStore
+from app.agent.image_store import ImageStore
 from app.agent.llm import OpenAIAdapter
 from app.agent.models import Message, ToolContext, ToolResult
 from app.agent.service import AgentService
@@ -23,6 +25,7 @@ from app.api.sheets.service import SheetsService
 from app.handlers.web_search import WebSearchService
 from app.registers.classroom import register_classroom_tools
 from app.registers.forms import register_forms_tools
+from app.registers.image_tools import register_image_tools
 from app.registers.telegram import register_telegram_tools
 from app.registers.web_search import register_web_search
 from app.registers.sheets import register_sheets_tools
@@ -44,10 +47,12 @@ class Application:
     dispatcher: Dispatcher
     http_client: httpx.AsyncClient
     llm_client: AsyncOpenAI
+    image_store: ImageStore
 
     async def close(self) -> None:
         await self.llm_client.close()
         await self.http_client.aclose()
+        await self.image_store.close()
         await self.bot.session.close()
 
 
@@ -79,6 +84,21 @@ async def build_application(settings: Settings) -> Application:
         token=settings.bot_token_clean,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
+    # The username is needed to recognise @mentions in group chats and to
+    # register group commands as /command@username.
+    try:
+        me = await bot.me()
+        bot_username = me.username
+        logger.info(
+            "Telegram bot identity resolved: id=%s username=%s",
+            me.id,
+            bot_username,
+        )
+    except Exception as error:
+        # A temporary Telegram outage must not keep the whole bot from starting;
+        # private chats still work, group mentions stay disabled until restart.
+        logger.warning("Unable to resolve bot identity: %s", error)
+        bot_username = None
 
     web_service = WebSearchService(10)
 
@@ -91,11 +111,16 @@ async def build_application(settings: Settings) -> Application:
     )
     sheets = SheetsService(SheetsClient(http_client))
     forms = FormsService(FormsClient(http_client))
-    telegram = TelegramService(bot)
+    telegram = TelegramService(
+        bot,
+        group_actions_ephemeral=settings.GROUP_ACTIONS_EPHEMERAL,
+    )
+    image_store = ImageStore()
     registry = ToolRegistry()
     register_classroom_tools(registry, classroom, telegram)
     register_telegram_tools(registry, telegram, speech_service)
     register_web_search(registry, web_service)
+    register_image_tools(registry, telegram, image_store)
     register_sheets_tools(registry, sheets)
     register_drive_tools(registry, drive)
     register_forms_tools(registry, forms, telegram)
@@ -131,9 +156,38 @@ async def build_application(settings: Settings) -> Application:
         history=storage,
         tools=registry,
         role_resolver=resolve_role,
+        group_safe_mode=settings.GROUP_SAFE_MODE,
     )
+    # /ask is declared ephemeral: in groups Telegram shows it in the command
+    # menu and the follow-up exchange stays private to the caller.
+    try:
+        await bot.set_my_commands(
+            [
+                BotCommand(
+                    command="ask",
+                    description="Приватно спросить агента в группе",
+                    is_ephemeral=True,
+                ),
+                BotCommand(command="auth", description="Авторизовать Google Classroom"),
+                BotCommand(command="reset", description="Очистить контекст диалога"),
+            ],
+            scope=BotCommandScopeAllGroupChats(),
+        )
+    except Exception as error:
+        # Command metadata is cosmetic; never block startup because of it.
+        logger.warning("Unable to publish group commands: %s", error)
     dispatcher = Dispatcher()
-    dispatcher.include_router(create_router(agent, bot, voice_service,telegram))
+    dispatcher.include_router(
+        create_router(
+            agent,
+            bot,
+            voice_service,
+            telegram,
+            bot_username=bot_username,
+            group_replies_ephemeral=settings.GROUP_REPLIES_EPHEMERAL,
+            group_allow_reply_to_bot=settings.GROUP_ALLOW_REPLY_TO_BOT,
+        )
+    )
     dispatcher.include_router(
         create_callback_router(
             classroom=classroom,
@@ -141,7 +195,8 @@ async def build_application(settings: Settings) -> Application:
             telegram=telegram,
             agent=agent,
             forms=forms,
+            group_safe_mode=settings.GROUP_SAFE_MODE,
         )
     )
     logger.info("Application bootstrap completed")
-    return Application(bot, dispatcher, http_client, llm_client)
+    return Application(bot, dispatcher, http_client, llm_client, image_store)

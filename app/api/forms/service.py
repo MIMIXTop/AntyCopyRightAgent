@@ -95,10 +95,14 @@ class FormsService:
             description: str,
             is_quiz: bool,
             questions: list[dict],
+            chat_id: int | None = None,
+            chat_type: str | None = None,
     ) -> str:
         pending_id = str(uuid.uuid4())[:8]
         self._pending_forms[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "title": title,
             "description": description,
             "is_quiz": is_quiz,
@@ -118,10 +122,14 @@ class FormsService:
             form_id: str,
             form_title: str,
             question: dict,
+            chat_id: int | None = None,
+            chat_type: str | None = None,
     ) -> str:
         pending_id = str(uuid.uuid4())[:8]
         self._pending_questions[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "form_id": form_id,
             "form_title": form_title,
             "question": question,
@@ -134,10 +142,19 @@ class FormsService:
     def remove_pending_question(self, pending_id: str) -> None:
         self._pending_questions.pop(pending_id, None)
 
-    def hold_publish(self, telegram_id: int, form_id: str, form_title: str) -> str:
+    def hold_publish(
+        self,
+        telegram_id: int,
+        form_id: str,
+        form_title: str,
+        chat_id: int | None = None,
+        chat_type: str | None = None,
+    ) -> str:
         pending_id = str(uuid.uuid4())[:8]
         self._pending_publishes[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "form_id": form_id,
             "form_title": form_title,
         }

@@ -122,7 +122,9 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             telegram_id=telegram_id,
             course_name=name,
             course_description=description,
-            course_section=section
+            course_section=section,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
         return ToolResult(
             call_id=context.call_id,
@@ -157,9 +159,10 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         )
 
         await telegram.request_course_confirmation(
-            chat_id=context.user_id,
+            chat_id=context.chat_id,
             pending_id=pending_id,
-            course_name=name
+            course_name=name,
+            delivery=context.delivery,
         )
 
         return ToolResult(
@@ -223,12 +226,20 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             text=text,
             state=state,
             materials=materials_payload if materials_payload else None,
-            telegram_attachments=telegram_attachments
+            telegram_attachments=telegram_attachments,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
 
         course = await classroom.get_concrete_course(context.user_id, course_id)
-        await telegram.request_course_announcement(chat_id=context.user_id, pending_id=pending_id, announcement_text=text, course_name=course.name)
+        await telegram.request_course_announcement(
+            chat_id=context.chat_id,
+            pending_id=pending_id,
+            announcement_text=text,
+            course_name=course.name,
+            delivery=context.delivery,
+        )
 
         return ToolResult(
             call_id=context.call_id,
@@ -257,6 +268,25 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             raise ToolArgumentsError("create_assignment", "title is required")
         if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
             raise ToolArgumentsError("create_assignment", "topic_id must be a non-empty string")
+        if not isinstance(telegram_file_ids, list) or not all(
+            isinstance(file_id, str) and file_id.strip() for file_id in telegram_file_ids
+        ):
+            raise ToolArgumentsError(
+                "create_assignment",
+                "telegram_file_ids must be a list of non-empty strings",
+            )
+
+        # Files attached to the teacher's current message are resolved by the
+        # runtime: their real file_ids go into the pending request, so the model
+        # never has to invent them. Explicit ids from earlier turns are appended.
+        runtime_file_ids = [
+            attachment.file_id
+            for attachment in context.attachments
+            if attachment.file_id
+        ]
+        telegram_file_ids = list(
+            dict.fromkeys([*runtime_file_ids, *telegram_file_ids])
+        )
 
         pending_id = classroom.hold_course_work(
             telegram_id=context.user_id,
@@ -269,16 +299,19 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             links=links,
             telegram_file_ids=telegram_file_ids,
             topic_id=topic_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         course = await classroom.get_concrete_course(context.user_id, course_id)
 
         await telegram.request_course_work(
-            chat_id=context.user_id,
+            chat_id=context.chat_id,
             pending_id=pending_id,
             title=title,
             course_name=course.name,
-            due_date=due_date
+            due_date=due_date,
+            delivery=context.delivery,
         )
 
         return ToolResult(
@@ -355,6 +388,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         pending_id = classroom.hold_update(
             "course",
             telegram_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
             course_id=course_id,
             name=name,
             description=description,
@@ -373,6 +408,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
                 "section": section,
                 "course_state": course_state,
             },
+            delivery=context.delivery,
         )
         return ToolResult(
             call_id=context.call_id,
@@ -399,6 +435,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         pending_id = classroom.hold_update(
             "announcement",
             telegram_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
             course_id=course_id,
             announcement_id=announcement_id,
             text=text,
@@ -409,6 +447,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             chat_id=context.chat_id,
             pending_id=pending_id,
             changes={"text": text, "state": state},
+            delivery=context.delivery,
         )
         return ToolResult(
             call_id=context.call_id,
@@ -441,6 +480,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         pending_id = classroom.hold_update(
             "assignment",
             telegram_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
             course_id=course_id,
             assignment_id=assignment_id,
             title=title,
@@ -460,6 +501,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
                 "due_date": due_date, "due_time": due_time, "state": state,
                 "topic_id": topic_id,
             },
+            delivery=context.delivery,
         )
         return ToolResult(
             call_id=context.call_id,
@@ -481,6 +523,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             chat_id=context.chat_id,
             url=url,
             text=text,
+            delivery=context.delivery,
         )
 
         return ToolResult(
@@ -514,13 +557,16 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
 
 
         pending_id = classroom.hold_course_topic(
-            telegram_id, course_id, topic_name
+            telegram_id, course_id, topic_name,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         await telegram.request_course_topic_create(
             chat_id=context.chat_id,
             pending_id=pending_id,
             topic_name=topic_name,
+            delivery=context.delivery,
         )
 
         return ToolResult(
@@ -547,6 +593,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         pending_id = classroom.hold_update(
             "topic",
             telegram_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
             course_id=course_id,
             topic_name=topic_name,
             topic_id=topic_id,
@@ -557,7 +605,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             pending_id=pending_id,
             changes={
                 "topic_name": topic_name,
-            }
+            },
+            delivery=context.delivery,
         )
 
         return ToolResult(
@@ -629,7 +678,9 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             description=description,
             materials=materials_payload if materials_payload else None,
             topic_id=topic_id,
-            telegram_attachments=telegram_attachments
+            telegram_attachments=telegram_attachments,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
         )
 
         await telegram.request_course_material_create(
@@ -637,7 +688,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             pending_id=pending_id,
             title=title,
             description=description,
-            materials_payload=materials_payload if materials_payload else None
+            materials_payload=materials_payload if materials_payload else None,
+            delivery=context.delivery,
         )
         return ToolResult(
             call_id=context.call_id,
@@ -692,6 +744,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         pending_id = classroom.hold_update(
             "material",
             telegram_id,
+            chat_id=context.chat_id,
+            chat_type=context.chat_type,
             course_id=course_id,
             material_id=material_id,
             title=title,
@@ -712,7 +766,8 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         await telegram.request_course_material_update(
             chat_id=context.chat_id,
             pending_id=pending_id,
-            changes=changes
+            changes=changes,
+            delivery=context.delivery,
         )
 
         return ToolResult(

@@ -36,7 +36,10 @@ async def test_agent_returns_text_and_preserves_history():
     assert await service.handle(1, 2, "hi") == "hello"
     history = await service._history.get(1)
     assert [message.role for message in history] == ["user", "assistant"]
-    assert llm.calls[0][0][0].content == "hi"
+    messages = llm.calls[0][0]
+    # The runtime role prompt is intentionally prepended to every request.
+    assert messages[0].role == "system"
+    assert messages[1].content == "hi"
 
 
 @pytest.mark.asyncio
@@ -140,6 +143,101 @@ async def test_agent_does_not_finish_confirmed_form_draft_without_create_form():
 
     assert result == "created"
     assert [name for name, _ in calls] == ["send_message", "create_form"]
+
+
+@pytest.mark.asyncio
+async def test_finish_in_later_iteration_after_create_form_is_allowed():
+    """The natural flow is create_form (paused) first, finish one iteration
+    later to wait for the confirmation keyboard. The guard must remember a
+    successful create_form across the whole run, not just the current
+    response — otherwise every correct flow deadlocks in rejections."""
+    registry = ToolRegistry()
+    calls = []
+
+    async def create_form(context, args):
+        calls.append("create_form")
+        return ToolResult(context.call_id, '{"status":"paused"}')
+
+    async def finish(context, args):
+        calls.append("finish")
+        return ToolResult(context.call_id, '{"status":"ok"}', terminal=True)
+
+    async def send_message(context, args):
+        calls.append("send_message")
+        return ToolResult(context.call_id, '{"status":"delivered"}')
+
+    registry.register("send_message", send_message, {"name": "send_message"})
+    registry.register("create_form", create_form, {"name": "create_form"})
+    registry.register("finish", finish, {"name": "finish"})
+    llm = FakeLLM([
+        # Run 1: draft the questions (not a confirmation yet).
+        LLMResponse(
+            "",
+            [
+                ToolCallInfo("call-1", "send_message", '{"text":"Черновик теста"}'),
+                ToolCallInfo("call-2", "finish", "{}"),
+            ],
+        ),
+        # Run 2 (confirmation): create_form alone, then finish alone.
+        LLMResponse("", [ToolCallInfo("call-3", "create_form", '{"title":"Тест","questions":[]}')]),
+        LLMResponse("", [ToolCallInfo("call-4", "finish", "{}")]),
+    ])
+    service = AgentService(llm, InMemoryHistoryStore(), registry, max_iterations=4)
+
+    await service.handle(1, 2, "создай тест")
+    result = await service.handle(1, 2, "да делай")
+
+    assert result == ""
+    # send_message + finish (draft run), then create_form + finish (run 2).
+    assert calls == ["send_message", "finish", "create_form", "finish"]
+
+
+@pytest.mark.asyncio
+async def test_repeated_premature_finish_falls_back_to_honest_message():
+    """If the model keeps calling finish without create_form, the run must
+    stop after MAX_PREMATURE_FINISH_BLOCKS with an actionable message
+    instead of looping until an empty-response error."""
+    registry = ToolRegistry()
+    calls = []
+
+    async def send_message(context, args):
+        calls.append("send_message")
+        return ToolResult(context.call_id, '{"status":"delivered"}')
+
+    async def finish(context, args):
+        calls.append("finish")
+        return ToolResult(context.call_id, '{"status":"ok"}', terminal=True)
+
+    async def create_form(context, args):  # pragma: no cover - must not run
+        calls.append("create_form")
+        return ToolResult(context.call_id, '{"status":"paused"}')
+
+    registry.register("send_message", send_message, {"name": "send_message"})
+    registry.register("finish", finish, {"name": "finish"})
+    registry.register("create_form", create_form, {"name": "create_form"})
+    llm = FakeLLM([
+        LLMResponse(
+            "",
+            [
+                ToolCallInfo("call-1", "send_message", '{"text":"Черновик теста"}'),
+                ToolCallInfo("call-2", "finish", "{}"),
+            ],
+        ),
+        LLMResponse("", [ToolCallInfo("call-3", "finish", "{}")]),
+        LLMResponse("", [ToolCallInfo("call-4", "finish", "{}")]),
+        LLMResponse("", [ToolCallInfo("call-5", "finish", "{}")]),
+    ])
+    service = AgentService(llm, InMemoryHistoryStore(), registry, max_iterations=10)
+
+    await service.handle(1, 2, "создай тест")
+    result = await service.handle(1, 2, "да делай")
+
+    assert result == AgentService.FORM_FALLBACK_MESSAGE
+    # Run 1 drafts, then two rejections and the fallback — no extra LLM call.
+    assert len(llm.calls) == 4
+    assert "create_form" not in calls
+    history = await service._history.get(1)
+    assert history[-1].content == AgentService.FORM_FALLBACK_MESSAGE
 
 
 @pytest.mark.asyncio

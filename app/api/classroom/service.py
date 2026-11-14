@@ -51,10 +51,14 @@ class ClassroomService:
             links: list[str] | None,
             telegram_file_ids: list[str] | None,
             topic_id: str | None = None,
+            chat_id: int | None = None,
+            chat_type: str | None = None,
     ):
         pending_id = str(uuid.uuid4())[:8]
         self._pending_course_works[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "course_id": course_id,
             "title": title,
             "description": description,
@@ -83,10 +87,14 @@ class ClassroomService:
         materials: list[dict] | None,
         topic_id: str | None,
         telegram_attachments: list | None,
+        chat_id: int | None = None,
+        chat_type: str | None = None,
     ):
         pending_id = str(uuid.uuid4())[:8]
         self._pending_materials[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "course_id": course_id,
             "title": title,
             "description": description,
@@ -100,11 +108,15 @@ class ClassroomService:
             self,
             telegram_id: int,
             course_id: str,
-            topic_name: str
+            topic_name: str,
+            chat_id: int | None = None,
+            chat_type: str | None = None,
     ):
         pending_id = str(uuid.uuid4())[:8]
         self._pending_topics[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "course_id": course_id,
             "topic_name": topic_name
         }
@@ -122,11 +134,20 @@ class ClassroomService:
     def remove_pending_topic(self, pending_id: str) -> None:
         return self._pending_topics.pop(pending_id, None)
 
-    def hold_update(self, resource: str, telegram_id: int, **data) -> str:
+    def hold_update(
+        self,
+        resource: str,
+        telegram_id: int,
+        chat_id: int | None = None,
+        chat_type: str | None = None,
+        **data,
+    ) -> str:
         pending_id = str(uuid.uuid4())[:8]
         self._pending_updates[pending_id] = {
             "resource": resource,
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             **data,
         }
         return pending_id
@@ -145,11 +166,15 @@ class ClassroomService:
         state: str | None,
         materials: list | None,
         telegram_attachments: list | None = None,
+        chat_id: int | None = None,
+        chat_type: str | None = None,
     ):
 
         pending_id = str(uuid.uuid4())[:8]
         self._pending_announcements[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "course_id": course_id,
             "text": text,
             "state": state,
@@ -168,8 +193,15 @@ class ClassroomService:
 
         return pending_id
 
-    def hold_course_creation(self, telegram_id: int, course_name: str, course_description: str,
-                             course_section: str) -> str:
+    def hold_course_creation(
+        self,
+        telegram_id: int,
+        course_name: str,
+        course_description: str,
+        course_section: str,
+        chat_id: int | None = None,
+        chat_type: str | None = None,
+    ) -> str:
         logger.info(
             "ClassroomService.hold_course_creation called: telegram_id=%s course_name=%r course_description=%r course_section=%r",
             telegram_id,
@@ -180,6 +212,8 @@ class ClassroomService:
         pending_id = str(uuid.uuid4())[:8]
         self._pending_courses[pending_id] = {
             "telegram_id": telegram_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
             "name": course_name,
             "description": course_description,
             "section": course_section
@@ -316,11 +350,14 @@ class ClassroomService:
             max_points: int | None = 100,
             due_date: str | None = None,
             due_time: str | None = None,
-            materials: list[dict] | None = None
+            materials: list[dict] | None = None,
+            topic_id: str | None = None,
     ):
         self._validate_telegram_id(telegram_id)
         if not title or not title.strip():
             raise ValidationError("Title is required")
+        if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
+            raise ValidationError("Topic ID must be a non-empty string")
 
         return await self.client.create_assigment(
             telegram_id=telegram_id,
@@ -330,7 +367,8 @@ class ClassroomService:
             max_points=max_points,
             due_date=due_date,
             due_time=due_time,
-            materials=materials
+            materials=materials,
+            topic_id=topic_id,
         )
 
     async def upload_to_drive(self, telegram_id: int, file_name: str, content: bytes, mime_type: str, parent_folder_id: str | None = None):
