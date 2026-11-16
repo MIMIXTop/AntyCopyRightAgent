@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "publish_form",
-    "description": "Publish a Google Forms form and open it for responses. The tool asks for explicit Telegram confirmation. After confirmation the responder link arrives in an action_result event.",
+    "description": "Publish a Google Forms form and open it for responses. The tool asks for explicit Telegram confirmation. After confirmation the action_result reports is_published and is_accepting_responses; send the responder link only when is_accepting_responses is true.",
     "parameters": {
       "type": "object",
       "properties": {

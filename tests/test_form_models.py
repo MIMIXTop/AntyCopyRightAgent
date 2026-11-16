@@ -2,12 +2,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.forms.models import (
+    EmailCollectionType,
     Form,
     FormItemModel,
     FormResponsesList,
     Question,
     build_enable_quiz_request,
     build_publish_request,
+    build_update_form_info_request,
 )
 
 
@@ -23,9 +25,11 @@ QUIZ_FORM_PAYLOAD = {
         "emailCollectionType": "VERIFIED",
         "quizSettings": {"isQuiz": True},
     },
-    "publishState": {
-        "isPublished": True,
-        "isAcceptingResponses": True,
+    "publishSettings": {
+        "publishState": {
+            "isPublished": True,
+            "isAcceptingResponses": True,
+        }
     },
     "revisionId": "00000001",
     "responderUri": "https://docs.google.com/forms/d/form-123/viewform",
@@ -38,7 +42,7 @@ QUIZ_FORM_PAYLOAD = {
                     "questionId": "q-1",
                     "required": True,
                     "grading": {
-                        "pointValues": 5,
+                        "pointValue": 5,
                         "correctAnswers": {"answers": [{"value": "4"}]},
                     },
                     "choiceQuestion": {
@@ -62,6 +66,9 @@ def test_form_parses_quiz_payload_with_aliases():
     assert form.is_quiz is True
     assert form.publish_state is not None
     assert form.publish_state.is_published is True
+    assert form.is_published is True
+    assert form.is_accepting_responses is True
+    assert form.student_uri == "https://docs.google.com/forms/d/form-123/viewform"
     assert form.responder_uri == "https://docs.google.com/forms/d/form-123/viewform"
     assert form.edit_uri == "https://docs.google.com/forms/d/form-123/edit"
 
@@ -72,7 +79,7 @@ def test_form_parses_quiz_payload_with_aliases():
     assert question.question_id == "q-1"
     assert question.required is True
     assert question.grading is not None
-    assert question.grading.point_values == 5
+    assert question.grading.point_value == 5
     assert question.grading.correct_answers.answers[0].value == "4"
     assert question.choice_question is not None
     assert question.choice_question.type.value == "RADIO"
@@ -117,7 +124,7 @@ def test_create_item_request_builds_location_and_strips_read_only_fields():
                     "questionId": "q-1",
                     "required": True,
                     "grading": {
-                        "pointValues": 2,
+                        "pointValue": 2,
                         "correctAnswers": {"answers": [{"value": "б"}]},
                     },
                     "choiceQuestion": {
@@ -139,7 +146,7 @@ def test_create_item_request_builds_location_and_strips_read_only_fields():
                     "question": {
                         "required": True,
                         "grading": {
-                            "pointValues": 2,
+                            "pointValue": 2,
                             "correctAnswers": {"answers": [{"value": "б"}]},
                         },
                         "choiceQuestion": {
@@ -156,12 +163,104 @@ def test_create_item_request_builds_location_and_strips_read_only_fields():
 
 def test_builders_produce_batch_update_and_publish_bodies():
     assert build_enable_quiz_request() == {
-        "updateFormSettings": {
+        "updateSettings": {
             "settings": {"quizSettings": {"isQuiz": True}},
             "updateMask": "quizSettings",
         }
     }
-    assert build_publish_request() == {"updateMask": "publishState"}
+    assert build_publish_request() == {
+        "publishSettings": {
+            "publishState": {
+                "isPublished": True,
+                "isAcceptingResponses": True,
+            }
+        },
+        "updateMask": "publishState",
+    }
+    assert build_publish_request(
+        is_published=False, is_accepting_responses=False
+    ) == {
+        "publishSettings": {
+            "publishState": {
+                "isPublished": False,
+                "isAcceptingResponses": False,
+            }
+        },
+        "updateMask": "publishState",
+    }
+
+
+def test_update_form_info_request_uses_fields_present_in_the_mask():
+    assert build_update_form_info_request(description="Вариант 1") == {
+        "updateFormInfo": {
+            "info": {"description": "Вариант 1"},
+            "updateMask": "description",
+        }
+    }
+
+    assert build_update_form_info_request(
+        title="Тест",
+        description="Вариант 1",
+        document_title="Тест (вариант 1)",
+    ) == {
+        "updateFormInfo": {
+            "info": {
+                "title": "Тест",
+                "description": "Вариант 1",
+                "documentTitle": "Тест (вариант 1)",
+            },
+            "updateMask": "title,description,documentTitle",
+        }
+    }
+
+    with pytest.raises(ValueError):
+        build_update_form_info_request()
+
+
+def test_form_parses_the_response_of_a_freshly_created_form():
+    # forms.create returns the new form with the default settings: Google uses
+    # DO_NOT_COLLECT (not NONE) for emailCollectionType, and the publish state
+    # is nested under publishSettings.
+    form = Form.model_validate(
+        {
+            "formId": "19jbGMGsQmd_IlbtjmHTtW0ixbMf6vo8QXcfYfjkpQKU",
+            "info": {
+                "title": "Тестовая форма Kira",
+                "documentTitle": "Тестовая форма Kira",
+            },
+            "settings": {"emailCollectionType": "DO_NOT_COLLECT"},
+            "revisionId": "00000002",
+            "responderUri": "https://docs.google.com/forms/d/e/x/viewform",
+            "publishSettings": {
+                "publishState": {"isPublished": True, "isAcceptingResponses": True}
+            },
+        }
+    )
+
+    assert form.form_id == "19jbGMGsQmd_IlbtjmHTtW0ixbMf6vo8QXcfYfjkpQKU"
+    assert form.info.title == "Тестовая форма Kira"
+    assert form.settings is not None
+    assert form.settings.email_collection_type is EmailCollectionType.DO_NOT_COLLECT
+    assert form.is_published is True
+    assert form.is_accepting_responses is True
+    assert form.student_uri == "https://docs.google.com/forms/d/e/x/viewform"
+
+
+def test_form_without_accepting_responses_has_no_student_link():
+    # A published-but-closed form: Google returns isPublished=true and omits
+    # isAcceptingResponses, so the /viewform link must not be offered.
+    form = Form.model_validate(
+        {
+            "formId": "form-closed",
+            "info": {"title": "Закрытый тест"},
+            "publishSettings": {"publishState": {"isPublished": True}},
+            "responderUri": "https://docs.google.com/forms/d/e/x/viewform",
+        }
+    )
+
+    assert form.is_published is True
+    assert form.is_accepting_responses is False
+    assert form.student_uri is None
 
 
 def test_responses_list_parses_answers_by_question_id():

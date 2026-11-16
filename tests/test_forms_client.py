@@ -26,8 +26,19 @@ async def test_forms_client_builds_requests_and_parses_models():
             )
         if path.endswith(":batchUpdate"):
             return httpx.Response(200, json={}, request=request)
-        if path.endswith(":publish"):
-            return httpx.Response(200, json={}, request=request)
+        if path.endswith(":setPublishSettings"):
+            return httpx.Response(
+                200,
+                json={
+                    "publishSettings": {
+                        "publishState": {
+                            "isPublished": True,
+                            "isAcceptingResponses": True,
+                        }
+                    }
+                },
+                request=request,
+            )
         if path.endswith("/responses"):
             return httpx.Response(
                 200,
@@ -40,6 +51,7 @@ async def test_forms_client_builds_requests_and_parses_models():
                 "formId": "form-1",
                 "info": {"title": "Тест"},
                 "settings": {"quizSettings": {"isQuiz": True}},
+                "publishSettings": {"publishState": {"isPublished": True}},
             },
             request=request,
         )
@@ -49,7 +61,6 @@ async def test_forms_client_builds_requests_and_parses_models():
         form = await client.create_form(
             telegram_id=42,
             title="Тест",
-            description="Вариант 1",
             document_title="Тест",
         )
         assert form.form_id == "form-1"
@@ -57,13 +68,21 @@ async def test_forms_client_builds_requests_and_parses_models():
 
         await client.batch_update(42, "form-1", [{"createItem": {"location": {"index": 0}}}])
         publish_result = await client.publish(42, "form-1")
-        assert publish_result == {}
+        assert publish_result["publishSettings"]["publishState"] == {
+            "isPublished": True,
+            "isAcceptingResponses": True,
+        }
         responses = await client.get_responses(42, "form-1")
         assert responses.responses == []
         assert responses.total_responses == 0
 
         fetched = await client.get_form(42, "form-1")
         assert fetched.is_quiz is True
+        # Published but closed: Google omits isAcceptingResponses, so the
+        # /viewform link must not be offered as usable.
+        assert fetched.is_published is True
+        assert fetched.is_accepting_responses is False
+        assert fetched.student_uri is None
     finally:
         await client._http.aclose()
 
@@ -72,7 +91,7 @@ async def test_forms_client_builds_requests_and_parses_models():
     assert create_request.url.path == "/api/forms/v1/forms"
     assert create_request.url.params["telegram_id"] == "42"
     assert json.loads(create_request.content) == {
-        "info": {"title": "Тест", "description": "Вариант 1", "documentTitle": "Тест"}
+        "info": {"title": "Тест", "documentTitle": "Тест"}
     }
 
     batch_request = requests[1]
@@ -82,8 +101,16 @@ async def test_forms_client_builds_requests_and_parses_models():
     }
 
     publish_request = requests[2]
-    assert publish_request.url.path == "/api/forms/v1/forms/form-1:publish"
-    assert json.loads(publish_request.content) == {"updateMask": "publishState"}
+    assert publish_request.url.path == "/api/forms/v1/forms/form-1:setPublishSettings"
+    assert json.loads(publish_request.content) == {
+        "publishSettings": {
+            "publishState": {
+                "isPublished": True,
+                "isAcceptingResponses": True,
+            }
+        },
+        "updateMask": "publishState",
+    }
 
     assert requests[3].url.path == "/api/forms/v1/forms/form-1/responses"
     assert requests[4].url.path == "/api/forms/v1/forms/form-1"

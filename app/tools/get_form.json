@@ -2,11 +2,12 @@
   "type": "function",
   "function": {
     "name": "get_form",
-    "description": "Retrieve a Google Forms form with its settings, questions, and responder link. Use it to inspect an existing form or to resolve a form_id.",
+    "description": "Retrieve a Google Forms form as a compact factual summary: title, quiz mode, question count and types, total points, a short question preview, plus a publish summary (is_published, is_accepting_responses, student_link_usable, responder_uri, edit_uri). Use it to inspect a form, resolve a form_id, or check whether a student link works before sending it. It does not dump every question by default.",
     "parameters": {
       "type": "object",
       "properties": {
-        "form_id": {"type": "string", "minLength": 1, "description": "Exact form ID returned by create_form or a previous tool result."}
+        "form_id": {"type": "string", "minLength": 1, "description": "Exact form ID returned by create_form or a previous tool result."},
+        "include_items": {"type": "boolean", "description": "Set true only when the teacher explicitly asks to list the form's questions. Adds a compact list (title, type, points, option count) capped at 100 questions."}
       },
       "required": ["form_id"],
       "additionalProperties": false
