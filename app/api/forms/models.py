@@ -15,12 +15,12 @@ class FormModel(BaseModel):
 class ChoiceQuestionType(str, Enum):
     RADIO = "RADIO"
     CHECKBOX = "CHECKBOX"
-    DROPDOWN = "DROPDOWN"
+    DROP_DOWN = "DROP_DOWN"
 
 
 class EmailCollectionType(str, Enum):
     EMAIL_COLLECTION_TYPE_UNSPECIFIED = "EMAIL_COLLECTION_TYPE_UNSPECIFIED"
-    NONE = "NONE"
+    DO_NOT_COLLECT = "DO_NOT_COLLECT"
     VERIFIED = "VERIFIED"
     RESPONDER_INPUT = "RESPONDER_INPUT"
 
@@ -50,8 +50,13 @@ class FormSettings(FormModel):
 
 class PublishState(FormModel):
     is_published: bool = Field(default=False, alias="isPublished")
-    is_accepting_responses: bool = Field(default=True, alias="isAcceptingResponses")
+    # Google omits isAcceptingResponses for a form that is published but closed.
+    is_accepting_responses: bool = Field(default=False, alias="isAcceptingResponses")
     is_quiz_published: bool = Field(default=False, alias="isQuizPublished")
+
+
+class PublishSettings(FormModel):
+    publish_state: PublishState | None = Field(default=None, alias="publishState")
 
 
 class Answer(FormModel):
@@ -63,7 +68,8 @@ class CorrectAnswers(FormModel):
 
 
 class Grading(FormModel):
-    point_values: int = Field(default=0, alias="pointValues")
+    # Google calls this field pointValue (singular) and it is a single int.
+    point_value: int = Field(default=0, alias="pointValue")
     correct_answers: CorrectAnswers | None = Field(default=None, alias="correctAnswers")
 
 
@@ -142,7 +148,9 @@ class Form(FormModel):
     form_id: str = Field(alias="formId")
     info: FormInfoModel = Field(default_factory=FormInfoModel)
     settings: FormSettings | None = None
-    publish_state: PublishState | None = Field(default=None, alias="publishState")
+    publish_settings: PublishSettings | None = Field(
+        default=None, alias="publishSettings"
+    )
     revision_id: str | None = Field(default=None, alias="revisionId")
     responder_uri: str | None = Field(default=None, alias="responderUri")
     items: list[FormItemModel] = Field(default_factory=list)
@@ -154,10 +162,32 @@ class Form(FormModel):
         return self.settings.quiz_settings.is_quiz
 
     @property
+    def publish_state(self) -> PublishState | None:
+        """Published state regardless of where Google nests it."""
+        if self.publish_settings is not None:
+            return self.publish_settings.publish_state
+        return None
+
+    @property
+    def is_published(self) -> bool:
+        state = self.publish_state
+        return bool(state and state.is_published)
+
+    @property
+    def is_accepting_responses(self) -> bool:
+        state = self.publish_state
+        return bool(state and state.is_published and state.is_accepting_responses)
+
+    @property
     def edit_uri(self) -> str | None:
         if not self.form_id:
             return None
         return f"https://docs.google.com/forms/d/{self.form_id}/edit"
+
+    @property
+    def student_uri(self) -> str | None:
+        """Responder link, but only when it actually works for students."""
+        return self.responder_uri if self.is_accepting_responses else None
 
 
 class TextAnswers(FormModel):
@@ -189,16 +219,66 @@ class FormResponsesList(FormModel):
     total_responses: int | None = Field(default=None, alias="totalResponses")
 
 
+def build_update_form_info_request(
+        *,
+        title: str = "",
+        description: str = "",
+        document_title: str = "",
+) -> dict[str, Any]:
+    """batchUpdate request that edits form info fields.
+
+    ``forms.create`` only copies ``title`` and ``documentTitle``; the
+    description has to be applied afterwards. The update mask names the fields
+    relative to ``info`` (the root is implied by the API).
+    """
+    info: dict[str, str] = {}
+    fields: list[str] = []
+    for field, value in (
+        ("title", title),
+        ("description", description),
+        ("documentTitle", document_title),
+    ):
+        if value:
+            info[field] = value
+            fields.append(field)
+    if not fields:
+        raise ValueError("at least one form info field is required")
+    return {
+        "updateFormInfo": {
+            "info": info,
+            "updateMask": ",".join(fields),
+        }
+    }
+
+
 def build_enable_quiz_request() -> dict[str, Any]:
     """batchUpdate request that switches the form into quiz mode."""
     return {
-        "updateFormSettings": {
+        "updateSettings": {
             "settings": {"quizSettings": {"isQuiz": True}},
             "updateMask": "quizSettings",
         }
     }
 
 
-def build_publish_request(update_mask: str = "publishState") -> dict[str, Any]:
-    """Body for the :publish endpoint."""
-    return {"updateMask": update_mask}
+def build_publish_request(
+        *,
+        is_published: bool = True,
+        is_accepting_responses: bool = True,
+        update_mask: str = "publishState",
+) -> dict[str, Any]:
+    """Body for the :setPublishSettings endpoint.
+
+    Google Forms has no ``:publish`` method; publication is a publish-settings
+    update. A form is only usable by students when both ``isPublished`` and
+    ``isAcceptingResponses`` are true.
+    """
+    return {
+        "publishSettings": {
+            "publishState": {
+                "isPublished": is_published,
+                "isAcceptingResponses": is_accepting_responses,
+            }
+        },
+        "updateMask": update_mask,
+    }

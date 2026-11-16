@@ -2,6 +2,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable, Hashable
 
+from app.agent.attachment_memory import AttachmentMemory
 from app.agent.conversation import conversation_key
 from app.agent.models import (
     DeliveryContext,
@@ -40,6 +41,7 @@ class AgentService:
         max_iterations: int = 10,
         role_resolver: Callable[[int], Awaitable[str]] | None = None,
         group_safe_mode: bool = True,
+        attachment_ttl_seconds: float = 1800,
     ):
         self._llm = llm
         self._history = history
@@ -47,6 +49,7 @@ class AgentService:
         self._max_iterations = max_iterations
         self._role_resolver = role_resolver
         self._group_safe_mode = group_safe_mode
+        self._attachments = AttachmentMemory(ttl_seconds=attachment_ttl_seconds)
         # Agent runs for the same conversation must never interleave: the
         # history store is shared and each loop reads it on every iteration.
         # Without this lock, an album of 4 files (or two rapid messages) drives
@@ -119,6 +122,13 @@ class AgentService:
         )
         async with self._lock_for(conversation_id):
             role = await self._resolve_role(user_id)
+            # A text-only message starts a new intent, so attachments from the
+            # previous one must not leak into it. A media message replaces the
+            # remembered set.
+            if attachments:
+                self._attachments.remember(conversation_id, attachments)
+            else:
+                self._attachments.forget(conversation_id)
             await self._history.append(
                 conversation_id,
                 Message("user", content=text, attachments=attachments or []),
@@ -144,6 +154,16 @@ class AgentService:
         conversation_id = conversation_key(delivery.chat_type, chat_id, user_id)
         async with self._lock_for(conversation_id):
             role = await self._resolve_role(user_id)
+            # Button presses carry no media: reuse the files from the user's
+            # latest media message so a confirmed announcement/assignment keeps
+            # the picture the teacher attached a minute ago.
+            attachments = self._attachments.recent(conversation_id)
+            if attachments:
+                logger.info(
+                    "Reusing remembered attachments: conversation=%s count=%s",
+                    conversation_id,
+                    len(attachments),
+                )
             await self._history.append(
                 conversation_id,
                 Message(
@@ -155,9 +175,10 @@ class AgentService:
                 conversation_id,
                 chat_id,
                 user_id,
-                [],
+                attachments,
                 role,
                 delivery,
+                attachments_reused=bool(attachments),
             )
 
     async def reset(
@@ -187,6 +208,7 @@ class AgentService:
         attachments: list[TelegramAttachment],
         role: str,
         delivery: DeliveryContext,
+        attachments_reused: bool = False,
     ) -> str:
         initial_history = await self._history.get(conversation_id)
         confirmed_draft = self._has_draft_before_confirmation(initial_history)
@@ -302,6 +324,7 @@ class AgentService:
                             attachments or [],
                             role,
                             delivery,
+                            attachments_reused=attachments_reused,
                         ),
                         arguments,
                         allowed=allowed_tools,

@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "create_assignment",
-    "description": "Creates and publishes or drafts a coursework/assignment (e.g. lab, homework, test) in Google Classroom. Can optionally include deadlines, max points, web links, or attached files. If course_id is unknown, invoke get_courses first.",
+    "description": "Creates and publishes or drafts a coursework/assignment (e.g. lab, homework, test) in Google Classroom. Can optionally include deadlines, max points, web links, or attached files. Files the teacher attached in the current or immediately preceding message are uploaded automatically; mention them in the confirmation. If course_id is unknown, invoke get_courses first.",
     "parameters": {
       "type": "object",
       "properties": {

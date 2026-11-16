@@ -238,6 +238,11 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             pending_id=pending_id,
             announcement_text=text,
             course_name=course.name,
+            attachment_names=[
+                attachment.file_name or attachment.file_id
+                for attachment in telegram_attachments
+            ],
+            attachments_reused=context.attachments_reused,
             delivery=context.delivery,
         )
 
@@ -247,7 +252,12 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
                 "status": "paused",
                 "reason": "waiting_for_user_confirmation",
                 "telegram_attachments": len(telegram_attachments),
-            }),
+                "attachment_names": [
+                    attachment.file_name or attachment.file_id
+                    for attachment in telegram_attachments
+                ],
+                "attachments_reused": context.attachments_reused,
+            }, ensure_ascii=False),
             terminal=True
         )
 
@@ -311,12 +321,26 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             title=title,
             course_name=course.name,
             due_date=due_date,
+            attachment_names=[
+                attachment.file_name or attachment.file_id
+                for attachment in context.attachments
+            ],
+            attachments_reused=context.attachments_reused,
             delivery=context.delivery,
         )
 
         return ToolResult(
             call_id=context.call_id,
-            content='{"status": "paused", "reason": "waiting_for_user_confirmation"}',
+            content=json.dumps({
+                "status": "paused",
+                "reason": "waiting_for_user_confirmation",
+                "telegram_attachments": len(context.attachments),
+                "attachment_names": [
+                    attachment.file_name or attachment.file_id
+                    for attachment in context.attachments
+                ],
+                "attachments_reused": context.attachments_reused,
+            }, ensure_ascii=False),
             terminal=True
         )
 
@@ -477,6 +501,23 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
         if topic_id is not None and (not isinstance(topic_id, str) or not topic_id.strip()):
             raise ToolArgumentsError("update_assignment", "topic_id must be a non-empty string")
 
+        topic_display = topic_id
+        if topic_id:
+            # Show the human-readable topic name in the confirmation prompt;
+            # the numeric ID alone means nothing to the teacher.
+            try:
+                topics = await classroom.get_topics(telegram_id, course_id)
+                topic_display = next(
+                    (topic.name for topic in topics if topic.topic_id == topic_id),
+                    topic_id,
+                )
+            except Exception as error:
+                logger.warning(
+                    "Could not resolve topic name for assignment update: topic_id=%s error=%s",
+                    topic_id,
+                    error,
+                )
+
         pending_id = classroom.hold_update(
             "assignment",
             telegram_id,
@@ -499,7 +540,7 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             changes={
                 "title": title, "description": description, "max_points": max_points,
                 "due_date": due_date, "due_time": due_time, "state": state,
-                "topic_id": topic_id,
+                "topic_id": topic_display,
             },
             delivery=context.delivery,
         )
@@ -689,6 +730,11 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
             title=title,
             description=description,
             materials_payload=materials_payload if materials_payload else None,
+            attachment_names=[
+                attachment.file_name or attachment.file_id
+                for attachment in telegram_attachments
+            ],
+            attachments_reused=context.attachments_reused,
             delivery=context.delivery,
         )
         return ToolResult(
@@ -697,7 +743,13 @@ def register_classroom_tools(registry, classroom: ClassroomService, telegram: Te
                 "status": "paused",
                 "reason": "waiting_for_user_confirmation",
                 "pending_id": pending_id,
-            }),
+                "telegram_attachments": len(telegram_attachments),
+                "attachment_names": [
+                    attachment.file_name or attachment.file_id
+                    for attachment in telegram_attachments
+                ],
+                "attachments_reused": context.attachments_reused,
+            }, ensure_ascii=False),
             terminal=True,
         )
 

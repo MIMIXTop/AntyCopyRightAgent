@@ -26,6 +26,22 @@ class FakeClassroom:
         return {"id": "course-1"}
 
 
+class FakeUpdateClassroom(FakeClassroom):
+    def __init__(self, data):
+        super().__init__(data)
+        self.updates = []
+
+    def get_pending_update(self, pending_id):
+        return self.data
+
+    def remove_pending_update(self, pending_id):
+        self.removed.append(pending_id)
+
+    async def update_assignment(self, **kwargs):
+        self.updates.append(kwargs)
+        return SimpleNamespace(id=kwargs["assignment_id"])
+
+
 class FakeHistory:
     def __init__(self):
         self.appended = []
@@ -67,6 +83,55 @@ def find_handler(router, name):
         if item.callback.__name__ == name:
             return item.callback
     raise AssertionError(f"callback {name} not registered")
+
+
+@pytest.mark.asyncio
+async def test_assignment_update_forwards_topic_id_on_confirmation():
+    classroom = FakeUpdateClassroom(
+        {
+            "resource": "assignment",
+            "telegram_id": ALICE,
+            "chat_id": ALICE,
+            "chat_type": "private",
+            "course_id": "course-1",
+            "assignment_id": "work-1",
+            "title": None,
+            "description": None,
+            "max_points": None,
+            "due_date": None,
+            "due_time": None,
+            "state": None,
+            "topic_id": "topic-1",
+        }
+    )
+    telegram = FakeTelegram()
+    router = create_callback_router(
+        classroom=classroom,
+        history_store=FakeHistory(),
+        telegram=telegram,
+        agent=None,
+    )
+    call, answers = make_call(ALICE)
+    call.data = "course:work:update:confirm:p1"
+
+    await find_handler(router, "confirm_assignment_update")(call)
+
+    assert classroom.updates == [
+        {
+            "telegram_id": ALICE,
+            "course_id": "course-1",
+            "assignment_id": "work-1",
+            "title": None,
+            "description": None,
+            "max_points": None,
+            "due_date": None,
+            "due_time": None,
+            "state": None,
+            "topic_id": "topic-1",
+        }
+    ]
+    assert classroom.removed == ["p1"]
+    assert telegram.edits[0][1] == "✅ Задание успешно изменено."
 
 
 @pytest.mark.asyncio

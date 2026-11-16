@@ -13,6 +13,21 @@ from app.agent.service import AgentService
 import json
 
 
+def _created_announcement_ref(result) -> tuple[str | None, str | None]:
+    """Extract id/link from ClassroomClient.create_announcement.
+
+    The client returns a ResultRequest wrapper (status + body), not an
+    Announcement model, so never access attributes directly on the result.
+    """
+    body = getattr(result, "body", None)
+    if not isinstance(body, dict):
+        return None, None
+    return (
+        body.get("id") or body.get("announcementId"),
+        body.get("alternateLink"),
+    )
+
+
 def create_callback_router(
     classroom: ClassroomService,
     history_store: HistoryStore,
@@ -239,7 +254,7 @@ def create_callback_router(
             return
 
         await call.answer()
-        await telegram.edit_status(call, f"⏳ Создаю анонса...", chat_id=_chat_id(call, data))
+        await telegram.edit_status(call, "⏳ Создаю анонс...", chat_id=_chat_id(call, data))
 
         materials = []
         telegram_attachments = data.get("telegram_attachments", [])
@@ -293,11 +308,38 @@ def create_callback_router(
             )
 
             await telegram.edit_status(call, "✅ Анонс успешно создан", chat_id=_chat_id(call, data))
+            attachments_uploaded = len(materials)
+            announcement_id, alternate_link = _created_announcement_ref(result)
+            link_count = sum(
+                1 for material in data.get("materials", []) if "link" in material
+            )
             await history_store.append(
                 _conversation_key(call, data),
-                Message("system", f"Пользователь подтвердил создание анонса курса '{data['course_id']}'. Анонс успешно создан.")
+                Message(
+                    "system",
+                    "Пользователь подтвердил создание анонса курса "
+                    f"'{data['course_id']}'. Анонс создан: "
+                    f"announcement_id={announcement_id or 'unknown'}, "
+                    f"attachments_uploaded={attachments_uploaded}, "
+                    f"links={link_count}.",
+                )
             )
-            await notify_agent(call, "create_announcement", "confirmed", True, "Анонс успешно создан.", data=data)
+            await notify_agent(
+                call,
+                "create_announcement",
+                "confirmed",
+                True,
+                json.dumps(
+                    {
+                        "announcement_id": announcement_id,
+                        "attachments_uploaded": attachments_uploaded,
+                        "links": link_count,
+                        "alternate_link": alternate_link,
+                    },
+                    ensure_ascii=False,
+                ),
+                data=data,
+            )
 
         except ApplicationError as e:
             await telegram.edit_status(call, "❌ Ошибка при создании анонса.", chat_id=_chat_id(call, data))
@@ -657,6 +699,7 @@ def create_callback_router(
                     due_date=data["due_date"],
                     due_time=data["due_time"],
                     state=data["state"],
+                    topic_id=data.get("topic_id"),
                 )
                 message = "✅ Задание успешно изменено."
 
@@ -763,26 +806,67 @@ def create_callback_router(
                     is_quiz=data["is_quiz"],
                     questions=data["questions"],
                 )
-                responder_uri = form.responder_uri
+                # Report the real state, not an assumption: Google sometimes
+                # omits publishSettings in the create response, so read the
+                # form back once when that happens.
+                state_form = form
+                if form.publish_settings is None:
+                    try:
+                        state_form = await forms.get_form(
+                            data["telegram_id"], form.form_id
+                        )
+                    except ApplicationError:
+                        logger.warning(
+                            "Failed to read back created form state: form_id=%s",
+                            form.form_id,
+                        )
 
-                await telegram.edit_status(call, f"✅ Форма *«{data['title']}»* успешно создана!", chat_id=_chat_id(call, data))
-                if responder_uri:
-                    await telegram.send_form_link(
-                        chat_id=_chat_id(call, data),
-                        title=data["title"],
-                        responder_uri=responder_uri,
-                        delivery=_delivery(call, data),
-                    )
+                responder_uri = state_form.student_uri
+                edit_uri = state_form.edit_uri
+                is_published = state_form.is_published
+                is_accepting_responses = state_form.is_accepting_responses
+
+                if data.get("publish"):
+                    creation_status = "✅ Форма создана. Публикация ждёт подтверждения."
+                elif is_accepting_responses:
+                    creation_status = "✅ Форма создана и принимает ответы."
+                else:
+                    creation_status = "✅ Форма создана, но ссылка для ответов пока не работает."
+                await telegram.edit_status(
+                    call,
+                    f"{creation_status} *«{data['title']}»*",
+                    chat_id=_chat_id(call, data),
+                )
 
                 await history_store.append(
                     _conversation_key(call, data),
                     Message(
                         "system",
                         f"Пользователь подтвердил создание формы '{data['title']}'. "
-                        f"Форма создана: form_id={form.form_id}, ссылка={responder_uri}. "
-                        f"Сообщи преподавателю результат и предложи опубликовать её или прикрепить к курсу.",
+                        f"Форма создана: form_id={form.form_id}, "
+                        f"is_published={is_published}, "
+                        f"is_accepting_responses={is_accepting_responses}, "
+                        f"student link={responder_uri or 'not available'}, "
+                        f"edit link={edit_uri}. "
+                        f"Сообщай только эти факты; не утверждай, что ссылка "
+                        f"работает, если student link отсутствует.",
                     ),
                 )
+                publication_pending_id = None
+                if data.get("publish"):
+                    publication_pending_id = forms.hold_publish(
+                        telegram_id=data["telegram_id"],
+                        form_id=form.form_id,
+                        form_title=data["title"],
+                        chat_id=_chat_id(call, data),
+                        chat_type=data.get("chat_type"),
+                    )
+                    await telegram.request_form_publish(
+                        chat_id=_chat_id(call, data),
+                        pending_id=publication_pending_id,
+                        form_title=data["title"],
+                        delivery=_delivery(call, data),
+                    )
                 await notify_agent(
                     call,
                     "create_form",
@@ -793,7 +877,11 @@ def create_callback_router(
                             "form_id": form.form_id,
                             "title": data["title"],
                             "responder_uri": responder_uri,
+                            "edit_uri": edit_uri,
                             "is_quiz": data["is_quiz"],
+                            "published": is_published,
+                            "is_accepting_responses": is_accepting_responses,
+                            "publication_pending": publication_pending_id is not None,
                             "questions_added": len(data["questions"]),
                         },
                         ensure_ascii=False,
@@ -933,19 +1021,33 @@ def create_callback_router(
                     form_id=data["form_id"],
                 )
                 responder_uri = None
+                is_published = False
+                is_accepting_responses = False
                 try:
                     form = await forms.get_form(data["telegram_id"], data["form_id"])
-                    responder_uri = form.responder_uri
+                    responder_uri = form.student_uri
+                    is_published = form.is_published
+                    is_accepting_responses = form.is_accepting_responses
                 except ApplicationError:
                     logger.warning("Failed to refresh form after publish: form_id=%s", data["form_id"])
 
-                await telegram.edit_status(call, f"✅ Форма *«{data['form_title']}»* опубликована!", chat_id=_chat_id(call, data))
-                if responder_uri:
-                    await telegram.send_form_link(
+                if is_accepting_responses:
+                    await telegram.edit_status(call, f"✅ Форма *«{data['form_title']}»* опубликована!", chat_id=_chat_id(call, data))
+                    if responder_uri:
+                        await telegram.send_form_link(
+                            chat_id=_chat_id(call, data),
+                            title=data["form_title"],
+                            responder_uri=responder_uri,
+                            delivery=_delivery(call, data),
+                        )
+                else:
+                    # Google accepted the request but the state we read back is
+                    # not usable yet: do not present a responder link as working.
+                    await telegram.edit_status(
+                        call,
+                        f"⚠️ Google принял запрос, но форма *«{data['form_title']}»* "
+                        "пока не принимает ответы. Проверь её состояние позже.",
                         chat_id=_chat_id(call, data),
-                        title=data["form_title"],
-                        responder_uri=responder_uri,
-                        delivery=_delivery(call, data),
                     )
 
                 await history_store.append(
@@ -953,18 +1055,23 @@ def create_callback_router(
                     Message(
                         "system",
                         f"Пользователь подтвердил публикацию формы '{data['form_title']}' "
-                        f"(form_id={data['form_id']}). Ссылка: {responder_uri}.",
+                        f"(form_id={data['form_id']}). "
+                        f"is_published={is_published}, "
+                        f"is_accepting_responses={is_accepting_responses}, "
+                        f"student link={responder_uri or 'not available'}.",
                     ),
                 )
                 await notify_agent(
                     call,
                     "publish_form",
                     "confirmed",
-                    True,
+                    is_accepting_responses,
                     json.dumps(
                         {
                             "form_id": data["form_id"],
                             "title": data["form_title"],
+                            "is_published": is_published,
+                            "is_accepting_responses": is_accepting_responses,
                             "responder_uri": responder_uri,
                         },
                         ensure_ascii=False,

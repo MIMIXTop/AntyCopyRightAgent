@@ -214,20 +214,22 @@ def create_router(
     async def auth(message: TgMessage):
         if message.from_user is None or message.from_user.is_bot:
             return
-        delivery = _delivery(message, ephemeral=is_group_chat(message.chat.type))
+        if is_group_chat(message.chat.type):
+            await message.answer(
+                "Авторизация доступна только в личном чате с ботом."
+            )
+            return
         logger.info(
             "Telegram /auth called: chat_id=%s user_id=%s chat_type=%s",
             message.chat.id,
             message.from_user.id,
             message.chat.type,
         )
-        await telegram.send_message(
-            text=(
-                "Для доступа к вашим курсам и работам в Google Classroom необходимо авторизоваться:\n\n"
-                "Нажмите кнопку ниже, разрешите доступ в Google, после чего возвращайтесь в чат."
+        await message.answer(
+            (
+            "Для доступа к вашим курсам и работам в Google Classroom необходимо авторизоваться:\n\n"
+            "Нажмите кнопку ниже, разрешите доступ в Google, после чего возвращайтесь в чат."
             ),
-            chat_id=message.chat.id,
-            delivery=delivery,
             reply_markup=get_auth_keyboard(message.from_user.id),
         )
 

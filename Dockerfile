@@ -17,6 +17,19 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download docling's layout/tableformer checkpoints and the PP-OCR models
+# used for scans. The bot runs as a non-root user, so models must be fetched
+# here: otherwise docling writes into root-owned site-packages (or HuggingFace
+# cache) on the first uploaded document. "eslav" covers Russian, "cyrillic"
+# the remaining Cyrillic languages; PP-OCRv6 handles Latin and Chinese.
+ENV DOCUMENT_ARTIFACTS_PATH=/opt/docling-models
+RUN docling-tools models download layout tableformer rapidocr \
+        -o "$DOCUMENT_ARTIFACTS_PATH" \
+        --rapidocr-backend-lang onnxruntime:ch \
+        --rapidocr-backend-lang onnxruntime:eslav \
+        --rapidocr-backend-lang onnxruntime:cyrillic \
+    && chmod -R a+rX "$DOCUMENT_ARTIFACTS_PATH"
+
 COPY --chown=appuser:appgroup app/ ./app/
 
 USER appuser

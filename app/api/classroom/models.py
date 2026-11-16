@@ -115,6 +115,7 @@ class CourseWork(ClassroomModel):
     max_points: float | None = Field(default=None, alias="maxPoints")
     work_type: str = Field(default="ASSIGNMENT", alias="workType")
     creator_user_id: str | None = Field(default=None, alias="creatorUserId")
+    topic_id: str | None = Field(default=None, alias="topicId")
     assignment: AssignmentFolder | None = None
 
     @property

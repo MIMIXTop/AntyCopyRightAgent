@@ -1,5 +1,6 @@
 import asyncio
 import io
+from collections import Counter
 from uuid import uuid4
 
 from aiogram import Bot
@@ -386,6 +387,8 @@ class TelegramService:
 
     async def request_course_announcement(
             self, chat_id: int, course_name: str, announcement_text: str, pending_id: str,
+            attachment_names: list[str] | None = None,
+            attachments_reused: bool = False,
             delivery: DeliveryContext | None = None,
     ):
         logger.info(
@@ -394,15 +397,32 @@ class TelegramService:
             course_name,
             pending_id,
         )
+        text = (
+            f"Вы уверены, что хотите в курс *«{course_name}»* "
+            f"добавить следующий анонс:\n\n{announcement_text}?"
+        )
+        text += self._attachments_line(attachment_names, attachments_reused)
         await self._send_request(
             delivery,
             chat_id=chat_id,
-            text=(
-                f"Вы уверены, что хотите в курс *«{course_name}»* "
-                f"добавить следующий анонс:\n\n{announcement_text}?"
-            ),
+            text=self._cap_text(text),
             reply_markup=get_course_announcement_keyboard(pending_id=pending_id),
         )
+
+    @staticmethod
+    def _attachments_line(
+            attachment_names: list[str] | None,
+            attachments_reused: bool = False,
+    ) -> str:
+        """Show exactly which files will be attached before confirmation."""
+        if not attachment_names:
+            return "\n\n📎 Вложений нет — файлы не прикрепятся."
+        shown = ", ".join(attachment_names[:5])
+        hidden = len(attachment_names) - 5
+        if hidden > 0:
+            shown += f" и ещё {hidden}"
+        source = " (из предыдущего сообщения)" if attachments_reused else ""
+        return f"\n\n📎 Вложения{source}: {shown}"
 
     async def request_course_work(
             self,
@@ -411,6 +431,8 @@ class TelegramService:
             title: str,
             course_name: str,
             due_date: str | None = None,
+            attachment_names: list[str] | None = None,
+            attachments_reused: bool = False,
             delivery: DeliveryContext | None = None,
     ):
         deadline_text = f"\n⏰ Дедлайн: *{due_date}*" if due_date else ""
@@ -419,11 +441,12 @@ class TelegramService:
             f"Название: *{title}*"
             f"{deadline_text}"
         )
+        msg_text += self._attachments_line(attachment_names, attachments_reused)
 
         await self._send_request(
             delivery,
             chat_id=chat_id,
-            text=msg_text,
+            text=self._cap_text(msg_text),
             reply_markup=get_course_work_keyboard(pending_id=pending_id),
         )
 
@@ -513,6 +536,8 @@ class TelegramService:
     async def request_course_material_create(
             self, chat_id: int, pending_id: str, title: str, description: str,
             materials_payload: list | None = None,
+            attachment_names: list[str] | None = None,
+            attachments_reused: bool = False,
             delivery: DeliveryContext | None = None,
     ):
         details = (
@@ -524,11 +549,12 @@ class TelegramService:
                 f"• {material.get('link', {}).get('url') or material.get('driveFile', {}).get('driveFile', {}).get('id', 'вложение')}"
                 for material in materials_payload
             )
+        details += self._attachments_line(attachment_names, attachments_reused)
 
         await self._send_request(
             delivery,
             chat_id=chat_id,
-            text=f"Вы уверены, что хотите создать материал курса?\n\n{details}",
+            text=self._cap_text(f"Вы уверены, что хотите создать материал курса?\n\n{details}"),
             reply_markup=get_create_course_material_keyboard(pending_id=pending_id)
         )
 
@@ -566,6 +592,23 @@ class TelegramService:
     }
 
     @classmethod
+    def _format_question_preview(cls, question: dict) -> str:
+        """One compact line per question for the creation confirmation."""
+        title = str(question.get("title", ""))
+        if len(title) > 120:
+            title = title[:119] + "…"
+        label = cls._QUESTION_TYPE_LABELS.get(
+            question.get("type", ""), question.get("type", "")
+        )
+        details = [label]
+        options = question.get("options") or []
+        if options:
+            details.append(f"вариантов: {len(options)}")
+        if question.get("correct_answers"):
+            details.append(f"+{question.get('points') or 1} балл.")
+        return f"• {title} — {', '.join(details)}"
+
+    @classmethod
     def _format_question_summary(cls, question: dict) -> str:
         lines = [f"• {question['title']}"]
         question_type = question.get("type", "")
@@ -592,6 +635,7 @@ class TelegramService:
             description: str,
             is_quiz: bool,
             questions: list[dict],
+            publish: bool = False,
             delivery: DeliveryContext | None = None,
     ):
         logger.info(
@@ -609,25 +653,34 @@ class TelegramService:
             text += f"\nОписание: {str(description)[:1000]}"
         if is_quiz:
             text += "\n🎯 Режим квиза (с оценками)"
+        if publish:
+            text += "\n📢 После создания будет запрошено отдельное подтверждение публикации"
         if questions:
-            header = text + f"\n\nВопросы ({len(questions)}):\n"
-            summaries = [
-                self._format_question_summary(question) for question in questions
-            ]
-            fitting: list[str] = []
-            for index, summary in enumerate(summaries):
-                remaining = len(summaries) - index - 1
-                candidate = "\n".join([*fitting, summary])
-                if remaining:
-                    candidate += f"\n…и ещё {remaining} вопрос(ов)"
-                if len(header) + len(candidate) > self.TELEGRAM_TEXT_LIMIT:
-                    break
-                fitting.append(summary)
-            text = header + "\n".join(fitting)
-            hidden = len(summaries) - len(fitting)
+            # A full list of 70+ questions overflows Telegram and is unreadable.
+            # Show compact statistics and a short preview instead.
+            text += f"\n\nВопросов: {len(questions)}"
+            counts = Counter(question.get("type", "") for question in questions)
+            stats = ", ".join(
+                f"{count}× {self._QUESTION_TYPE_LABELS.get(kind, kind)}"
+                for kind, count in counts.items()
+            )
+            if stats:
+                text += f" ({stats})"
+            total_points = sum(
+                question.get("points") or 0
+                for question in questions
+                if question.get("correct_answers")
+            )
+            if total_points:
+                text += f"\nМаксимум баллов: {total_points}"
+            preview = questions[:3]
+            text += "\n" + "\n".join(
+                self._format_question_preview(question) for question in preview
+            )
+            hidden = len(questions) - len(preview)
             if hidden:
                 text += (
-                    f"\n\n…ещё {hidden} вопрос(ов) не показано — "
+                    f"\n…и ещё {hidden} вопрос(ов) — "
                     "все они будут созданы при подтверждении"
                 )
 

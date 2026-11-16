@@ -57,6 +57,9 @@ class ToolContext:
     attachments: list[TelegramAttachment] = field(default_factory=list)
     role: str = "teacher"
     delivery: DeliveryContext | None = None
+    # True when the attachments come from an earlier message (remembered for a
+    # confirmation turn) instead of the message that triggered this run.
+    attachments_reused: bool = False
 
     @property
     def chat_type(self) -> str:

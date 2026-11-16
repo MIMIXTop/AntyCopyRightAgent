@@ -71,6 +71,12 @@ class FakeFormsService(FormsService):
             "formId": form_id,
             "info": {"title": "Тест по алгебре"},
             "settings": {"quizSettings": {"isQuiz": True}},
+            "publishSettings": {
+                "publishState": {
+                    "isPublished": True,
+                    "isAcceptingResponses": True,
+                }
+            },
             "responderUri": f"https://docs.google.com/forms/d/{form_id}/viewform",
         })
 
@@ -121,6 +127,7 @@ async def test_create_form_holds_pending_and_requests_confirmation():
     pending = service.get_pending_form(payload["pending_id"])
     assert pending["title"] == "Тест по алгебре"
     assert pending["is_quiz"] is True
+    assert pending["publish"] is False
     assert pending["questions"][0] == {
         "title": "Сколько будет 2 + 2?",
         "type": "radio",
@@ -135,6 +142,27 @@ async def test_create_form_holds_pending_and_requests_confirmation():
     assert telegram.form_creation["pending_id"] == payload["pending_id"]
     assert telegram.form_creation["is_quiz"] is True
     assert service.created is None  # nothing is created before confirmation
+
+
+@pytest.mark.asyncio
+async def test_create_form_accepts_explicit_publish_request():
+    registry, service, telegram = build_registry()
+
+    result = await registry.call(
+        "create_form",
+        ToolContext(chat_id=1, user_id=42, call_id="call-publish"),
+        {
+            "title": "Опубликовать тест",
+            "is_quiz": True,
+            "publish": True,
+            "questions": [],
+        },
+    )
+
+    payload = json.loads(result.content)
+    pending = service.get_pending_form(payload["pending_id"])
+    assert pending["publish"] is True
+    assert telegram.form_creation["publish"] is True
 
 
 @pytest.mark.asyncio
@@ -269,8 +297,44 @@ async def test_get_form_returns_serialized_form():
 
     payload = json.loads(result.content)
     assert payload["form"]["form_id"] == "form-1"
-    assert payload["form"]["responder_uri"] == "https://docs.google.com/forms/d/form-1/viewform"
-    assert payload["form"]["settings"]["quiz_settings"]["is_quiz"] is True
+    assert payload["form"]["title"] == "Тест по алгебре"
+    assert payload["form"]["is_quiz"] is True
+    assert payload["form"]["questions_total"] == 0
+    assert "items" not in payload["form"]
+    assert payload["publish"] == {
+        "is_published": True,
+        "is_accepting_responses": True,
+        "student_link_usable": True,
+        "responder_uri": "https://docs.google.com/forms/d/form-1/viewform",
+        "edit_uri": "https://docs.google.com/forms/d/form-1/edit",
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_form_reports_closed_form_link_as_unusable():
+    class ClosedFormsService(FakeFormsService):
+        async def get_form(self, telegram_id, form_id):
+            # Google returns isPublished=true and omits isAcceptingResponses
+            # for a form whose responses are closed.
+            return Form.model_validate({
+                "formId": form_id,
+                "info": {"title": "Закрытый тест"},
+                "publishSettings": {"publishState": {"isPublished": True}},
+                "responderUri": f"https://docs.google.com/forms/d/{form_id}/viewform",
+            })
+
+    registry, _, _ = build_registry(service=ClosedFormsService())
+
+    result = await registry.call(
+        "get_form",
+        ToolContext(chat_id=1, user_id=42, call_id="call-10"),
+        {"form_id": "form-1"},
+    )
+
+    payload = json.loads(result.content)
+    assert payload["publish"]["is_published"] is True
+    assert payload["publish"]["is_accepting_responses"] is False
+    assert payload["publish"]["student_link_usable"] is False
 
 
 @pytest.mark.asyncio
@@ -286,3 +350,77 @@ async def test_get_form_responses_returns_empty_list():
     payload = json.loads(result.content)
     assert payload["responses"] == []
     assert payload["total_responses"] == 0
+
+
+@pytest.mark.asyncio
+async def test_get_form_summarizes_questions_unless_explicitly_requested():
+    class FormWithQuestions(FakeFormsService):
+        async def get_form(self, telegram_id, form_id):
+            return Form.model_validate({
+                "formId": "form-1",
+                "info": {"title": "Тест", "description": "Демо"},
+                "settings": {"quizSettings": {"isQuiz": True}},
+                "publishSettings": {
+                    "publishState": {
+                        "isPublished": True,
+                        "isAcceptingResponses": True,
+                    }
+                },
+                "responderUri": "https://docs.google.com/forms/d/form-1/viewform",
+                "items": [
+                    {
+                        "itemId": "item-1",
+                        "title": "2 + 2?",
+                        "questionItem": {
+                            "question": {
+                                "questionId": "q-1",
+                                "required": True,
+                                "grading": {"pointValue": 2},
+                                "choiceQuestion": {
+                                    "type": "RADIO",
+                                    "options": [{"value": "3"}, {"value": "4"}],
+                                },
+                            }
+                        },
+                    },
+                    {
+                        "itemId": "item-2",
+                        "title": "Столица Франции?",
+                        "questionItem": {
+                            "question": {
+                                "questionId": "q-2",
+                                "choiceQuestion": {
+                                    "type": "RADIO",
+                                    "options": [{"value": "Париж"}],
+                                },
+                            }
+                        },
+                    },
+                ],
+            })
+
+    registry, _, _ = build_registry(service=FormWithQuestions())
+
+    result = await registry.call(
+        "get_form",
+        ToolContext(chat_id=1, user_id=42, call_id="call-11"),
+        {"form_id": "form-1"},
+    )
+    payload = json.loads(result.content)["form"]
+    assert payload["questions_total"] == 2
+    assert payload["total_points"] == 2
+    assert len(payload["questions_preview"]) == 2
+    assert "questions" not in payload
+    assert "items" not in payload
+
+    detailed = await registry.call(
+        "get_form",
+        ToolContext(chat_id=1, user_id=42, call_id="call-12"),
+        {"form_id": "form-1", "include_items": True},
+    )
+    questions = json.loads(detailed.content)["form"]["questions"]
+    assert [question["question_id"] for question in questions] == ["q-1", "q-2"]
+    assert questions[0]["options_count"] == 2
+    # Options and grading payloads stay out of the tool result.
+    assert "options" not in questions[0]
+    assert "grading" not in questions[0]

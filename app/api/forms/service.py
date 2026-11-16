@@ -15,6 +15,7 @@ from app.api.forms.models import (
     QuestionItem,
     TextQuestion,
     build_enable_quiz_request,
+    build_update_form_info_request,
 )
 from app.core.errors import ValidationError
 from app.core.logging import logger
@@ -25,7 +26,7 @@ TEXT_TYPES = {"short_text", "long_text"}
 _QUESTION_TYPE_TO_API = {
     "radio": ChoiceQuestionType.RADIO,
     "checkbox": ChoiceQuestionType.CHECKBOX,
-    "dropdown": ChoiceQuestionType.DROPDOWN,
+    "dropdown": ChoiceQuestionType.DROP_DOWN,
 }
 
 # The Forms API accepts at most 50 requests per batchUpdate call.
@@ -42,7 +43,7 @@ def build_question_item(spec: dict) -> FormItemModel:
     grading = None
     if correct_answers:
         grading = Grading(
-            point_values=int(points or 1),
+            point_value=int(points or 1),
             correct_answers=CorrectAnswers(
                 answers=[Answer(value=value) for value in correct_answers]
             ),
@@ -94,6 +95,7 @@ class FormsService:
             title: str,
             description: str,
             is_quiz: bool,
+            publish: bool,
             questions: list[dict],
             chat_id: int | None = None,
             chat_type: str | None = None,
@@ -106,6 +108,7 @@ class FormsService:
             "title": title,
             "description": description,
             "is_quiz": is_quiz,
+            "publish": publish,
             "questions": questions,
         }
         return pending_id
@@ -186,15 +189,24 @@ class FormsService:
         form = await self._client.create_form(
             telegram_id=telegram_id,
             title=title,
-            description=description,
             document_title=title,
         )
 
+        # forms.create ignores everything except title/documentTitle, so the
+        # description and quiz mode are applied with a batchUpdate. Both are
+        # sent together when possible to save a round trip.
+        setup_requests = []
+        if description:
+            setup_requests.append(
+                build_update_form_info_request(description=description)
+            )
         if is_quiz:
+            setup_requests.append(build_enable_quiz_request())
+        if setup_requests:
             await self._client.batch_update(
                 telegram_id=telegram_id,
                 form_id=form.form_id,
-                requests=[build_enable_quiz_request()],
+                requests=setup_requests,
             )
 
         if questions:

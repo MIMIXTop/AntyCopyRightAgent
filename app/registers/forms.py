@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 
 from app.agent.models import ToolContext, ToolResult
 from app.api.forms.service import CHOICE_TYPES, TEXT_TYPES, FormsService
@@ -8,6 +9,78 @@ from app.core.logging import logger
 from app.tools.loader import load_schema
 
 QUESTION_TYPES = CHOICE_TYPES | TEXT_TYPES
+# The model gets a compact form summary by default: dumping every item of a
+# 70-question test wastes context and provokes long recaps in the chat.
+QUESTION_PREVIEW_LIMIT = 5
+TITLE_LIMIT = 160
+
+
+def _trim(value: str | None, limit: int = TITLE_LIMIT) -> str:
+    text = (value or "").strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _question_kind(question) -> str:
+    if question is None:
+        return "UNKNOWN"
+    if question.choice_question is not None:
+        return question.choice_question.type.value
+    if question.text_question is not None:
+        return "PARAGRAPH" if question.text_question.paragraph else "SHORT_TEXT"
+    return "UNKNOWN"
+
+
+def _form_summary(form, *, include_items: bool = False) -> dict:
+    """Compact, factual form view instead of a full item dump."""
+    types: Counter[str] = Counter()
+    total_points = 0
+    questions = []
+    for item in form.items:
+        question = item.question
+        kind = _question_kind(question)
+        types[kind] += 1
+        points = question.grading.point_value if question and question.grading else 0
+        total_points += points
+        questions.append(
+            {
+                "item_id": item.item_id,
+                "question_id": question.question_id if question else None,
+                "title": _trim(item.title),
+                "type": kind,
+                "required": bool(question and question.required),
+                "points": points,
+                "options_count": len(question.choice_question.options)
+                if question and question.choice_question
+                else 0,
+            }
+        )
+
+    summary = {
+        "form_id": form.form_id,
+        "title": form.info.title,
+        "description": _trim(form.info.description, 300),
+        "is_quiz": form.is_quiz,
+        "email_collection_type": (
+            form.settings.email_collection_type.value
+            if form.settings and form.settings.email_collection_type
+            else None
+        ),
+        "questions_total": len(questions),
+        "question_types": dict(types),
+        "total_points": total_points,
+    }
+    if include_items:
+        summary["questions"] = questions[:100]
+        summary["questions_omitted"] = max(0, len(questions) - 100)
+    else:
+        summary["questions_preview"] = [
+            {"title": item["title"], "type": item["type"]}
+            for item in questions[:QUESTION_PREVIEW_LIMIT]
+        ]
+        summary["questions_omitted"] = max(
+            0, len(questions) - QUESTION_PREVIEW_LIMIT
+        )
+    return summary
 
 
 def _require_form_id(tool_name: str, value) -> str:
@@ -109,6 +182,7 @@ def register_forms_tools(
         title = args.get("title")
         description = args.get("description", "")
         is_quiz = args.get("is_quiz", False)
+        publish = args.get("publish", False)
         raw_questions = args.get("questions") or []
 
         if not isinstance(title, str) or not title.strip():
@@ -117,6 +191,8 @@ def register_forms_tools(
             raise ToolArgumentsError("create_form", "description must be a string")
         if not isinstance(is_quiz, bool):
             raise ToolArgumentsError("create_form", "is_quiz must be a boolean")
+        if not isinstance(publish, bool):
+            raise ToolArgumentsError("create_form", "publish must be a boolean")
         if not isinstance(raw_questions, list):
             raise ToolArgumentsError("create_form", "questions must be a list")
 
@@ -130,6 +206,7 @@ def register_forms_tools(
             title=title.strip(),
             description=description,
             is_quiz=is_quiz,
+            publish=publish,
             questions=questions,
             chat_id=context.chat_id,
             chat_type=context.chat_type,
@@ -141,6 +218,7 @@ def register_forms_tools(
             title=title.strip(),
             description=description,
             is_quiz=is_quiz,
+            publish=publish,
             questions=questions,
             delivery=context.delivery,
         )
@@ -196,11 +274,23 @@ def register_forms_tools(
 
     async def get_form_tool(context: ToolContext, args: dict) -> ToolResult:
         form_id = _require_form_id("get_form", args.get("form_id"))
+        include_items = args.get("include_items", False)
+        if not isinstance(include_items, bool):
+            raise ToolArgumentsError("get_form", "include_items must be a boolean")
         form = await forms.get_form(context.user_id, form_id)
         return ToolResult(
             call_id=context.call_id,
             content=json.dumps(
-                {"form": form.model_dump(mode="json")},
+                {
+                    "form": _form_summary(form, include_items=include_items),
+                    "publish": {
+                        "is_published": form.is_published,
+                        "is_accepting_responses": form.is_accepting_responses,
+                        "student_link_usable": form.student_uri is not None,
+                        "responder_uri": form.responder_uri,
+                        "edit_uri": form.edit_uri,
+                    },
+                },
                 ensure_ascii=False,
             ),
         )

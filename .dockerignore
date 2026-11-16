@@ -10,3 +10,4 @@ uv.lock
 .python-version
 Procfile
 .git
+*.pdf

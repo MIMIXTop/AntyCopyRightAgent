@@ -95,6 +95,7 @@
 | `search_images` | DuckDuckGo | Поиск картинок по запросу → список ссылок |
 | `speech` | TTS-провайдер | Синтез речи и отправка голосового сообщения |
 | `ask_choice` | Telegram API | Вопрос с вариантами ответа на инлайн-кнопках |
+| `document_view` | pypdfium2 / Docling | Чтение PDF и PPTX: быстрый текст, OCR для сканов |
 | `get_academic_structure` | `CppServer` | Получение списка курсов, кафедр, предметов и групп |
 | `fetch_submissions` | `CppServer` | Выгрузка метаданных сданных файлов по фильтрам |
 | `start_plagiarism_audit` | `MLService` | Запуск задачи сравнения кода/отчетов на плагиат |
@@ -109,6 +110,7 @@
 * **Пакетный менеджер:** [uv](https://github.com/astral-sh/uv)
 * **Telegram Framework:** [aiogram 3.x](https://github.com/aiogram/aiogram) (AsyncIO)
 * **LLM Engine:** OpenAI Python SDK 
+* **Документы:** `pypdfium2` для текстовых PDF, `docling` + `rapidocr`/`onnxruntime` для сканов и PPTX
 * **Медиа:** `ffmpeg` + `libopus` для конвертации TTS-аудио в голосовые сообщения
 
 
@@ -151,6 +153,14 @@ GROUP_REPLIES_EPHEMERAL=true
 GROUP_ACTIONS_EPHEMERAL=true
 GROUP_ALLOW_REPLY_TO_BOT=false
 GROUP_SAFE_MODE=true
+
+# Документы — см. раздел «Просмотр документов»
+DOCUMENT_OCR_ENABLED=true
+DOCUMENT_OCR_LANG=eslav
+DOCUMENT_TABLE_STRUCTURE=false
+DOCUMENT_MAX_PAGES=100
+DOCUMENT_MAX_FILE_MB=30
+DOCUMENT_MAX_CHARS=50000
 ```
 
 ### 3. Запуск локально
@@ -226,6 +236,49 @@ docker compose up -d --force-recreate agent
 
 `ffmpeg` нужен только внутри контейнера; для локального запуска без Docker установите его в систему (`apt install ffmpeg`, `brew install ffmpeg`). Без него бот продолжит работать, но будет отправлять mp3.
 
+## 📄 Просмотр документов (document_view)
+
+Инструмент `document_view` читает PDF и PPTX, приложенные к сообщению, или документ по прямой ссылке, и возвращает markdown.
+
+- **Текстовые PDF** (лекции, статьи, методички) разбираются через `pypdfium2`: без ML-моделей, ~0.04 с на 72 слайда. Слайды без текстового слоя помечаются `[no text layer on this page]`.
+- **Сканы** и **PPTX** идут через Docling. Для сканов включается OCR, для PPTX — обычное извлечение текста.
+- Конвертация выполняется в отдельном потоке, поэтому бот продолжает отвечать другим пользователям.
+- Лимиты: 100 страниц, 30 МБ и 50 000 символов в ответе (при превышении результат обрезается с пометкой). Настраиваются через `DOCUMENT_MAX_PAGES`, `DOCUMENT_MAX_FILE_MB`, `DOCUMENT_MAX_CHARS`.
+- В группах инструмент недоступен (safe mode).
+
+### OCR и офлайн-модели
+
+На этапе сборки образа (`telegram_agent/Dockerfile`) скачиваются layout/tableformer Docling и модели PP-OCR:
+
+- `onnxruntime:ch` — PP-OCRv6 det/rec для латиницы и китайского;
+- `onnxruntime:eslav` — PP-OCRv5 для русского, украинского и белорусского;
+- `onnxruntime:cyrillic` — PP-OCRv5 для остальной кириллицы.
+
+Модели лежат в `/opt/docling-models`, путь передаётся через `DOCUMENT_ARTIFACTS_PATH`. Поэтому контейнер не скачивает модели при первом документе и не пытается писать в `site-packages` — именно это вызывало `PermissionError` у rapidocr. Какая модель распознавания используется, задаёт `DOCUMENT_OCR_LANG` (`eslav` по умолчанию).
+
+```env
+DOCUMENT_OCR_ENABLED=true        # OCR только для сканов и страниц без текста
+DOCUMENT_OCR_LANG=eslav          # eslav | cyrillic | ch | en | ...
+DOCUMENT_TABLE_STRUCTURE=false   # true = таблицы, но ~70 с и ~2.5 ГБ RAM
+DOCUMENT_MAX_PAGES=100
+DOCUMENT_MAX_FILE_MB=30
+DOCUMENT_MAX_CHARS=50000
+```
+
+Если OCR не нужен, поставьте `DOCUMENT_OCR_ENABLED=false`: сканы будут отклоняться с понятной ошибкой вместо долгого распознавания.
+
+Для локального запуска без Docker модели можно не готовить заранее: Docling загрузит их при первом скане, а OCR-модели — в `~/.cache/rapidocr`. Для офлайн-режима или экономии времени скачайте их один раз:
+
+```bash
+docling-tools models download layout tableformer rapidocr \
+  -o ./docling-models \
+  --rapidocr-backend-lang onnxruntime:ch \
+  --rapidocr-backend-lang onnxruntime:eslav \
+  --rapidocr-backend-lang onnxruntime:cyrillic
+
+export DOCUMENT_ARTIFACTS_PATH=$PWD/docling-models
+```
+
 ## Структура приложения
 
 Код организован плоскими feature-модулями:
@@ -279,6 +332,18 @@ python -m compileall app
 - [x] Возможность чтобы агент мог нормально работать в группах
 - [ ] Инструмент для запроса на анализ файлов на схожесть
 - [ ] (Идея) Инструмент для генерации картинок 
+
+## 📊 Логи и мониторинг
+
+У агента нет собственной веб-панели: он пишет в stdout и в файл, а записи отправляет на сервер.
+
+- **Панель:** `http://<сервер>:8080/dashboard` — выберите источник `telegram-agent`. Логи стримятся по WebSocket, с историей последних 2000 строк.
+- **Файл:** `telegram_agent/logs/kira.log` (ротация 10 МБ × 5). Смотреть: `tail -f logs/kira.log`.
+- **Настройки агента** (`.env`):
+  - `LOG_REMOTE_TOKEN` — должен совпадать с `AGENT_LOG_TOKEN` сервера; пусто = не отправлять.
+  - `LOG_REMOTE_URL` — необязательно; по умолчанию `CPP_SERVER_URL + /dashboard/api/logs/ingest`.
+  - `LOG_FILE_ENABLED=true`, `LOG_FILE_PATH=logs/kira.log`, `LOG_FILE_MAX_BYTES`, `LOG_FILE_BACKUPS`.
+- **Настройки сервера:** `AGENT_LOG_TOKEN` — общий секрет приёма логов; пусто = приём отключён.
 
 ## 🗺 План дальнейшего развития (Roadmap)
 
