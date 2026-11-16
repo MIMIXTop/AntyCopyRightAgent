@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "document_view",
-    "description": "Converts a PDF or PPTX document to Markdown so you can read and analyze its contents. Text PDFs are extracted quickly; scanned PDFs are recognized with OCR and may take a while. Documents over 100 pages or 30 MB are rejected, and very long results are truncated. Use a URL for a document available online, or omit url when the teacher attached a PDF/PPTX file in the current message. Do not invent URLs or file names.",
+    "description": "Converts a PDF or PPTX document to Markdown so you can read and analyze its contents. Text PDFs are extracted quickly; scanned PDFs are recognized with OCR and may take a while. Documents over 100 pages or 30 MB are rejected, and the markdown is cut to a bounded preview (a few thousand characters) to keep the context small; the result reports total_chars and output_truncated. Never paste the whole document into the chat: quote only the fragment needed for the answer. Use a URL for a document available online, or omit url when the teacher attached a PDF/PPTX file in the current message. Google Drive and Google Docs links are downloaded through the teacher's connected Google account; never open them manually. Do not invent URLs or file names.",
     "parameters": {
       "type": "object",
       "properties": {
@@ -12,7 +12,7 @@
         },
         "file_name": {
           "type": "string",
-          "description": "Exact name of an attached PDF/PPTX file when more than one supported document is attached."
+          "description": "Exact name of the document. Use the attachment name when more than one supported file is attached, or the file's name for a Google Drive/Docs URL (e.g. 'Лекция 1.pptx') so the right converter is used."
         }
       },
       "additionalProperties": false

@@ -24,6 +24,14 @@ EMPTY_PAGE_MARKER = "[no text layer on this page]"
 # is considered unreadable rather than merely sparse.
 MIN_EXTRACTED_CHARS = 20
 
+# Markers that mean Google answered with an authentication page instead of the
+# requested file (e.g. a Drive link that requires the connected account).
+GOOGLE_SIGNIN_MARKERS = (
+    "to continue to Google Drive",
+    "Google Drive: Sign-in",
+    "Sign in - Google Accounts",
+)
+
 
 @dataclass(frozen=True)
 class DocumentContent:
@@ -56,6 +64,7 @@ class DocumentViewService:
         self, data: bytes, file_name: str
     ) -> DocumentContent:
         self._validate_size(len(data), file_name)
+        self._reject_google_signin_page(data, file_name)
 
         if Path(file_name).suffix.lower() == ".pdf":
             # Text extraction is independent per document, so it does not need
@@ -151,6 +160,8 @@ class DocumentViewService:
         pages = len(result.pages)
         self._validate_pages(pages)
         markdown = result.document.export_to_markdown()
+        if any(marker in markdown for marker in GOOGLE_SIGNIN_MARKERS):
+            raise self._signin_error(source_label)
         if len(markdown.strip()) < MIN_EXTRACTED_CHARS:
             if not ocr_applies:
                 raise DocumentConversionError(
@@ -252,6 +263,23 @@ class DocumentViewService:
                 f"{file_name} is too large ({size / 1024 / 1024:.1f} MB); "
                 f"the limit is {limit_mb} MB."
             )
+
+    def _reject_google_signin_page(self, data: bytes, label: str) -> None:
+        head = data[:8192].lower()
+        if (
+            b"<html" in head
+            and b"google drive" in head
+            and b"sign in" in head
+        ):
+            raise self._signin_error(label)
+
+    @staticmethod
+    def _signin_error(label: str) -> DocumentConversionError:
+        return DocumentConversionError(
+            f"Google returned its sign-in page instead of {label}. "
+            "The file is not accessible without the connected Google account. "
+            "Share the file with that account (or connect it) and retry."
+        )
 
     def _validate_pages(self, pages: int) -> None:
         limit = self.settings.DOCUMENT_MAX_PAGES

@@ -170,6 +170,23 @@ async def test_size_limit_is_enforced_before_parsing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_google_signin_page_is_rejected_instead_of_returned(monkeypatch):
+    monkeypatch.setattr(
+        service_module.pdfium,
+        "PdfDocument",
+        lambda data: pytest.fail("must not parse a sign-in page"),
+    )
+    service = DocumentViewService(make_settings())
+    page = (
+        b"<!DOCTYPE html><html><head><title>Sign in</title></head>"
+        b"<body>Sign in to continue to Google Drive</body></html>"
+    )
+
+    with pytest.raises(DocumentConversionError, match="sign-in page"):
+        await service.convert_bytes_to_markdown(page, "drive-file")
+
+
+@pytest.mark.asyncio
 async def test_page_limit_is_enforced(monkeypatch):
     install_pdf(monkeypatch, ["text"] * 5)
     service = DocumentViewService(make_settings(DOCUMENT_MAX_PAGES=3))
