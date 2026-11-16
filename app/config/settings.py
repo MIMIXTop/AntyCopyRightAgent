@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: SecretStr
     OPEN_AI_KEY: SecretStr
     CPP_SERVER_URL: str
-    PUBLIC_SERVER_URL: str = "http://localhost:8080"
+    PUBLIC_SERVER_URL: str = "http://127.0.0.1:8080"
     LLM_MODEL: str
     HTTP_TIMEOUT_SECONDS: float = 15.0
     LLM_BASE_URL: str
@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     DOCUMENT_MAX_PAGES: int = 100
     DOCUMENT_MAX_FILE_MB: int = 30
     DOCUMENT_MAX_CHARS: int = 50_000
+    # Character budget for one document_view tool result. The model gets a
+    # bounded preview instead of the whole extracted document.
+    DOCUMENT_TOOL_MAX_CHARS: int = 4000
+    # How long Telegram attachments stay available for confirmation turns
+    # (buttons arrive without media, so the files must be remembered).
+    ATTACHMENT_MEMORY_TTL_SECONDS: int = 1800
+    # Live logs. The agent has no web panel: formatted records are pushed to
+    # the server dashboard (`/dashboard`), which already streams logs over
+    # WebSocket. The token must match AGENT_LOG_TOKEN on the server.
+    REMOTE_LOG_ENABLED: bool = True
+    LOG_REMOTE_URL: str = ""  # empty -> CPP_SERVER_URL + /dashboard/api/logs/ingest
+    LOG_REMOTE_TOKEN: str = ""
+    LOG_REMOTE_SERVICE: str = "telegram-agent"
+    # Rotating file log, so ``tail -f`` keeps working when the bot runs
+    # directly on the host (no ``docker logs``). Set LOG_FILE_ENABLED=false
+    # to keep stdout only.
+    LOG_FILE_ENABLED: bool = True
+    LOG_FILE_PATH: str = str(BASE_DIR / "logs" / "kira.log")
+    LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024
+    LOG_FILE_BACKUPS: int = 5
     # Directory with pre-downloaded docling/rapidocr models. The Docker image
     # points it at /opt/docling-models; when unset docling downloads on demand.
     DOCUMENT_ARTIFACTS_PATH: str | None = None
