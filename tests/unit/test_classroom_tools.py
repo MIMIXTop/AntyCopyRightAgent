@@ -160,6 +160,11 @@ async def test_create_announcement_keeps_links_drive_ids_and_telegram_attachment
 
     assert json.loads(result.content)["status"] == "paused"
     assert json.loads(result.content)["telegram_attachments"] == 2
+    assert json.loads(result.content)["attachment_names"] == [
+        "notes.pdf",
+        "diagram.png",
+    ]
+    assert json.loads(result.content)["attachments_reused"] is False
     pending = service.get_pending_announcement(
         next(iter(service._pending_announcements))
     )

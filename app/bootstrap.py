@@ -3,7 +3,11 @@ import httpx
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats,
+)
 from openai import AsyncOpenAI
 
 from app.agent.history import InMemoryHistoryStore
@@ -34,7 +38,6 @@ from app.registers.document_view import register_document_views
 from app.agent.document_view_service import DocumentViewService
 from app.agent.prompt import load_system_prompt
 from app.config.settings import Settings
-from app.core.logging import configure_logging
 from app.api.telegram.handlers import create_router
 from app.api.telegram.callbacks import create_callback_router
 from app.core.logging import logger
@@ -59,7 +62,6 @@ class Application:
 async def build_application(settings: Settings) -> Application:
     logger.info("Application bootstrap started: cpp_server=%s llm_model=%s", settings.CPP_SERVER_URL,
                 settings.LLM_MODEL)
-    configure_logging()
     http_client = httpx.AsyncClient(
         base_url=settings.CPP_SERVER_URL.rstrip("/"),
         timeout=settings.HTTP_TIMEOUT_SECONDS,
@@ -124,7 +126,12 @@ async def build_application(settings: Settings) -> Application:
     register_sheets_tools(registry, sheets)
     register_drive_tools(registry, drive)
     register_forms_tools(registry, forms, telegram)
-    register_document_views(registry, DocumentViewService(settings))
+    register_document_views(
+        registry,
+        DocumentViewService(settings),
+        drive=drive,
+        max_output_chars=settings.DOCUMENT_TOOL_MAX_CHARS,
+    )
 
     async def current_time(context: ToolContext, arguments: dict):
         from app.handlers.get_current_time import get_current_time
@@ -157,25 +164,25 @@ async def build_application(settings: Settings) -> Application:
         tools=registry,
         role_resolver=resolve_role,
         group_safe_mode=settings.GROUP_SAFE_MODE,
+        attachment_ttl_seconds=settings.ATTACHMENT_MEMORY_TTL_SECONDS,
+        max_iterations=100
     )
-    # /ask is declared ephemeral: in groups Telegram shows it in the command
-    # menu and the follow-up exchange stays private to the caller.
+    commands = [
+        BotCommand(
+            command="ask",
+            description="Приватно спросить агента в группе",
+            is_ephemeral=True,
+        ),
+        BotCommand(command="auth", description="Авторизовать Google Classroom"),
+        BotCommand(command="reset", description="Очистить контекст диалога"),
+    ]
     try:
-        await bot.set_my_commands(
-            [
-                BotCommand(
-                    command="ask",
-                    description="Приватно спросить агента в группе",
-                    is_ephemeral=True,
-                ),
-                BotCommand(command="auth", description="Авторизовать Google Classroom"),
-                BotCommand(command="reset", description="Очистить контекст диалога"),
-            ],
-            scope=BotCommandScopeAllGroupChats(),
-        )
+        # Publish the same command panel in groups and private chats.
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
     except Exception as error:
         # Command metadata is cosmetic; never block startup because of it.
-        logger.warning("Unable to publish group commands: %s", error)
+        logger.warning("Unable to publish Telegram commands: %s", error)
     dispatcher = Dispatcher()
     dispatcher.include_router(
         create_router(

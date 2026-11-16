@@ -231,3 +231,32 @@ async def test_update_material_without_materials_omits_preview_version():
     params = requests[0].url.params
     assert params["updateMask"] == "title"
     assert "previewVersion" not in params
+
+
+@pytest.mark.asyncio
+async def test_get_course_works_keeps_topic_id():
+    def mock_handler(request: httpx.Request):
+        return httpx.Response(
+            200,
+            json={
+                "courseWork": [
+                    {
+                        "id": "work-1",
+                        "courseId": "course-1",
+                        "title": "Lab",
+                        "topicId": "topic-1",
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    client = ClassroomClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    )
+    try:
+        works = await client.get_course_works(telegram_id=42, course_id="course-1")
+    finally:
+        await client.http.aclose()
+
+    assert works[0].topic_id == "topic-1"

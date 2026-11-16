@@ -3,13 +3,12 @@ from app.config.settings import settings
 
 
 def get_auth_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
-    url = f"{settings.public_server_url}/api/auth/google/start?telegram_id={telegram_id}"
+    url = f"{settings.CPP_SERVER_URL}/api/auth/google/start?telegram_id={telegram_id}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Google Authorize", url=url)]
         ]
     )
-
 def get_course_confirm_keyboard(pending_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[

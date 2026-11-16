@@ -2,7 +2,7 @@
   "type": "function",
   "function": {
     "name": "create_announcement",
-    "description": "Publishes or drafts an announcement in the Google Classroom stream, optionally attaching web links or Google Drive files. If course_id is unknown, call get_courses first.",
+    "description": "Publishes or drafts an announcement in the Google Classroom stream, optionally attaching web links or Google Drive files. Files the teacher attached in the current or immediately preceding message are uploaded to Drive and attached automatically; mention them in the confirmation. If course_id is unknown, call get_courses first.",
     "parameters": {
       "type": "object",
       "properties": {

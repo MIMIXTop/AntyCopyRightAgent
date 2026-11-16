@@ -2,6 +2,7 @@ import pytest
 from aiogram.exceptions import TelegramBadRequest
 
 from app.api.telegram.service import TelegramService
+from app.config.settings import settings
 from app.core.errors import ApplicationError, UnauthorizedError
 
 
@@ -77,8 +78,7 @@ async def test_request_form_creation_fits_many_questions_into_telegram_limit():
     message = bot.sent[0]
     assert len(message["text"]) <= TelegramService.TELEGRAM_TEXT_LIMIT
     # Hidden questions are announced instead of silently dropped.
-    assert "не показано" in message["text"]
-    assert "будут созданы при подтверждении" in message["text"]
+    assert "и ещё 12 вопрос" in message["text"]
     # The confirmation keyboard must still be attached.
     assert message["reply_markup"] is not None
 
@@ -129,7 +129,8 @@ async def test_request_form_question_stays_under_telegram_limit():
 
 
 @pytest.mark.asyncio
-async def test_unauthorized_error_sends_the_auth_button_instead_of_raw_error():
+async def test_unauthorized_error_sends_the_auth_button_instead_of_raw_error(monkeypatch):
+    monkeypatch.setattr(settings, "PUBLIC_SERVER_URL", "https://example.com")
     bot = RecordingBot()
     service = TelegramService(bot=bot)
 
@@ -143,3 +144,49 @@ async def test_unauthorized_error_sends_the_auth_button_instead_of_raw_error():
     button = message["reply_markup"].inline_keyboard[0][0]
     assert "987654" in button.url
     assert "/api/auth/google/start" in button.url
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_error_uses_cpp_server_auth_url(monkeypatch):
+    monkeypatch.setattr(settings, "CPP_SERVER_URL", "http://localhost:8080")
+    bot = RecordingBot()
+    service = TelegramService(bot=bot)
+
+    await service.send_error(chat_id=987654, error=UnauthorizedError())
+
+    assert len(bot.sent) == 1
+    button = bot.sent[0]["reply_markup"].inline_keyboard[0][0]
+    assert button.url == "http://localhost:8080/api/auth/google/start?telegram_id=987654"
+
+
+@pytest.mark.asyncio
+async def test_announcement_confirmation_shows_exact_attachments():
+    bot = RecordingBot()
+    service = TelegramService(bot=bot)
+
+    await service.request_course_announcement(
+        chat_id=1,
+        pending_id="pending-ann",
+        course_name="Базы данных",
+        announcement_text="Тест уже в ленте",
+        attachment_names=["knight.jpg"],
+        attachments_reused=True,
+    )
+
+    text = bot.sent[0]["text"]
+    assert "📎 Вложения (из предыдущего сообщения): knight.jpg" in text
+
+
+@pytest.mark.asyncio
+async def test_announcement_confirmation_warns_when_nothing_is_attached():
+    bot = RecordingBot()
+    service = TelegramService(bot=bot)
+
+    await service.request_course_announcement(
+        chat_id=1,
+        pending_id="pending-ann",
+        course_name="Базы данных",
+        announcement_text="Тест уже в ленте",
+    )
+
+    assert "📎 Вложений нет" in bot.sent[0]["text"]
