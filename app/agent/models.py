@@ -95,6 +95,11 @@ class Message:
     tool_call_id: str | None = None
     tool_calls: list[ToolCallInfo] | None = None
     attachments: list[TelegramAttachment] = field(default_factory=list)
+    # Forward origin ("из канала «X» (@x)") and a quoted forwarded message the
+    # user replied to. Kept separate from ``content`` so logs and history show
+    # what the user actually wrote.
+    forwarded_from: str | None = None
+    reply_context: str | None = None
 
 ToolHandler = Callable[
     [ToolContext, dict[str, Any]],

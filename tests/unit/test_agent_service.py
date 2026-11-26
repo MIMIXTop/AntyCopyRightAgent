@@ -392,3 +392,25 @@ async def test_handles_in_different_chats_run_concurrently():
 
     # The lock is per chat: unrelated chats must not block each other.
     assert llm.max_active == 2
+
+
+@pytest.mark.asyncio
+async def test_forward_context_is_stored_without_touching_the_text():
+    llm = FakeLLM([LLMResponse("ok")])
+    service = make_service(llm)
+
+    await service.handle(
+        1,
+        2,
+        "текст преподавателя",
+        forwarded_from="из канала «X» (@x)",
+        reply_context="Пользователь отвечает на пересланное сообщение.",
+    )
+
+    history = await service._history.get(1)
+    user = history[0]
+    assert user.content == "текст преподавателя"
+    assert user.forwarded_from == "из канала «X» (@x)"
+    assert user.reply_context == "Пользователь отвечает на пересланное сообщение."
+    # The same metadata is what the LLM adapter receives.
+    assert llm.calls[0][0][1].forwarded_from == "из канала «X» (@x)"

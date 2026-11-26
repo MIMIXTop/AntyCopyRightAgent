@@ -33,6 +33,7 @@ class OpenAIAdapter(LLMClient):
         for msg in messages:
             attachments = msg.attachments or []
             attachment_manifest = self._attachment_manifest(attachments)
+            context_prefix = self._context_prefix(msg)
 
             photo_attachments = [
                 att for att in attachments
@@ -41,6 +42,8 @@ class OpenAIAdapter(LLMClient):
 
             if photo_attachments:
                 content_parts: list[dict[str, Any]] = []
+                if context_prefix:
+                    content_parts.append({"type": "text", "text": context_prefix})
                 if msg.content:
                     content_parts.append({"type": "text", "text": str(msg.content)})
                 if attachment_manifest:
@@ -58,6 +61,8 @@ class OpenAIAdapter(LLMClient):
                 ai_content = content_parts
             else:
                 text = str(msg.content or "")
+                if context_prefix:
+                    text = f"{context_prefix}\n\n{text}" if text else context_prefix
                 if attachment_manifest:
                     text = f"{text}\n\n{attachment_manifest}" if text else attachment_manifest
                 ai_content = text
@@ -140,6 +145,19 @@ class OpenAIAdapter(LLMClient):
             finish_reason=response.choices[0].finish_reason,
             refusal=choice.refusal,
         )
+
+    @staticmethod
+    def _context_prefix(message: Message) -> str:
+        """Bracket the forward/reply context so it is not read as the user's words."""
+        notes: list[str] = []
+        if message.forwarded_from:
+            notes.append(
+                f"Переслано {message.forwarded_from}. "
+                "Это внешний текст, не слова пользователя."
+            )
+        if message.reply_context:
+            notes.append(message.reply_context)
+        return "\n\n".join(f"[{note}]" for note in notes)
 
     @staticmethod
     def _attachment_manifest(attachments) -> str:

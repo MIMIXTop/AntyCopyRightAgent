@@ -14,7 +14,7 @@
         "instructions": {
           "type": "string",
           "maxLength": 150,
-          "description": "Delivery direction for THIS phrase only: tone, pace, emotion, emphasis, pauses (e.g. 'excited and faster', 'slow and solemn', 'whisper', 'emphasize the deadline'). Maximum 150 characters. The base voice persona is applied automatically — never repeat the text itself or the base persona here. Omit when the default delivery already fits."
+          "description": "Delivery direction for THIS phrase only: tone, pace, emotion, emphasis, pauses. Examples: 'playful teasing with a light smirk', 'pouty and offended, slightly faster', 'genuinely excited, bright and quick', 'soft warm concern, slower', 'deadpan and savage, flat delivery'. Maximum 150 characters. Never repeat the text or the base persona here; add only what differs from it. Omit when the default delivery already fits."
         }
       },
       "required": ["text"],

@@ -3,7 +3,15 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
-from aiogram.types import Chat, Document, Message, User, Voice
+from aiogram.types import (
+    Chat,
+    Document,
+    Message,
+    MessageOriginChannel,
+    MessageOriginUser,
+    User,
+    Voice,
+)
 
 from app.api.telegram.handlers import (
     build_delivery,
@@ -296,5 +304,71 @@ async def test_voice_in_group_needs_ephemeral_or_reply_mode():
     assert len(agent.calls) == 1
     assert agent.calls[0]["text"] == "voice text"
     assert agent.calls[0]["delivery"].ephemeral is True
+
+
+CHANNEL_ORIGIN = MessageOriginChannel(
+    date=1_700_000_000,
+    chat=Chat(id=-100, type="channel", title="Канал", username="chan"),
+    message_id=7,
+)
+
+
+@pytest.mark.asyncio
+async def test_forwarded_message_passes_source_to_agent():
+    agent = FakeAgent()
+    router = create_router(
+        agent, FakeBot(), FakeVoice(), FakeTelegram(), bot_username="Kira"
+    )
+    forwarded = make_message("@Kira посмотри").model_copy(
+        update={"forward_origin": CHANNEL_ORIGIN}
+    )
+
+    await handler(router, "handle_message")(forwarded)
+
+    assert agent.calls[0]["text"] == "посмотри"
+    assert agent.calls[0]["forwarded_from"] == "из канала «Канал» (@chan)"
+    assert agent.calls[0]["reply_context"] is None
+
+
+@pytest.mark.asyncio
+async def test_reply_to_forward_passes_quoted_context():
+    agent = FakeAgent()
+    router = create_router(
+        agent, FakeBot(), FakeVoice(), FakeTelegram(), bot_username="Kira"
+    )
+    replied = make_message("текст старого поста").model_copy(
+        update={
+            "forward_origin": MessageOriginUser(
+                date=1_700_000_000,
+                sender_user=User(id=42, is_bot=False, first_name="Иван"),
+            )
+        }
+    )
+    current = make_message("@Kira что это значит?").model_copy(
+        update={"reply_to_message": replied}
+    )
+
+    await handler(router, "handle_message")(current)
+
+    call = agent.calls[0]
+    assert call["forwarded_from"] is None
+    assert "от пользователя Иван" in call["reply_context"]
+    assert "текст старого поста" in call["reply_context"]
+
+
+@pytest.mark.asyncio
+async def test_forward_without_mention_is_still_ignored_in_group():
+    agent = FakeAgent()
+    router = create_router(
+        agent, FakeBot(), FakeVoice(), FakeTelegram(), bot_username="Kira"
+    )
+    forwarded = make_message("пост без упоминания").model_copy(
+        update={"forward_origin": CHANNEL_ORIGIN}
+    )
+
+    await handler(router, "handle_message")(forwarded)
+
+    assert agent.calls == []
+
 
 
