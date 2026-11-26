@@ -14,6 +14,7 @@ from app.agent.voice_service import VoiceService
 from app.core.errors import ApplicationError
 from app.core.logging import logger
 from app.api.telegram.keyboards import get_auth_keyboard
+from app.api.telegram.forwarding import describe_forward, describe_reply_context
 from app.api.telegram.media_groups import MediaGroupBuffer
 from app.api.telegram.service import TelegramService
 
@@ -196,6 +197,8 @@ def create_router(
                 text=text,
                 attachments=attachments,
                 delivery=delivery,
+                forwarded_from=describe_forward(representative),
+                reply_context=describe_reply_context(representative),
             )
         except ApplicationError as error:
             await telegram.send_error(
@@ -257,6 +260,8 @@ def create_router(
                 user_id=message.from_user.id,
                 text=question,
                 delivery=delivery,
+                forwarded_from=describe_forward(message),
+                reply_context=describe_reply_context(message),
             )
         except ApplicationError as error:
             await telegram.send_error(message.chat.id, error, delivery=delivery)
@@ -307,6 +312,8 @@ def create_router(
             user_id=message.from_user.id,
             text=text,
             delivery=delivery,
+            forwarded_from=describe_forward(message),
+            reply_context=describe_reply_context(message),
         )
         if answer:
             await _reply(message, answer, delivery)
@@ -373,6 +380,8 @@ def create_router(
                 user_id=message.from_user.id,
                 text=text,
                 delivery=delivery,
+                forwarded_from=describe_forward(message),
+                reply_context=describe_reply_context(message),
             )
         except ApplicationError as error:
             await telegram.send_error(message.chat.id, error, delivery=delivery)

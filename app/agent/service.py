@@ -106,12 +106,14 @@ class AgentService:
         text: str,
         attachments: list[TelegramAttachment] | None = None,
         delivery: DeliveryContext | None = None,
+        forwarded_from: str | None = None,
+        reply_context: str | None = None,
     ) -> str:
         delivery = delivery or DeliveryContext(chat_id=chat_id, user_id=user_id)
         conversation_id = conversation_key(delivery.chat_type, chat_id, user_id)
         logger.info(
             "Agent.handle called: conversation=%s chat_id=%s user_id=%s chat_type=%s "
-            "ephemeral=%s text=%r attachments=%s",
+            "ephemeral=%s text=%r attachments=%s forwarded_from=%r reply_context=%s",
             conversation_id,
             chat_id,
             user_id,
@@ -119,6 +121,8 @@ class AgentService:
             delivery.use_ephemeral,
             text,
             attachments or [],
+            forwarded_from,
+            bool(reply_context),
         )
         async with self._lock_for(conversation_id):
             role = await self._resolve_role(user_id)
@@ -131,7 +135,13 @@ class AgentService:
                 self._attachments.forget(conversation_id)
             await self._history.append(
                 conversation_id,
-                Message("user", content=text, attachments=attachments or []),
+                Message(
+                    "user",
+                    content=text,
+                    attachments=attachments or [],
+                    forwarded_from=forwarded_from,
+                    reply_context=reply_context,
+                ),
             )
             return await self._run_loop(
                 conversation_id,

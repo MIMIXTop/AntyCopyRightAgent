@@ -166,12 +166,22 @@ def test_build_instructions_drops_extra_when_base_fills_budget():
 
 def test_real_base_prompt_fits_api_budget_alone():
     """The shipped persona must pass the endpoint's 500-char limit by itself."""
-    from app.agent.speech_service import MAX_INSTRUCTION_CHARS
+    from app.agent.speech_service import (
+        MAX_EXTRA_CHARS,
+        MAX_INSTRUCTION_CHARS,
+        PHRASE_MARKER,
+    )
 
     service = SpeechService.__new__(SpeechService)
     service.base_instructions = load_speech_prompt().strip()
 
     assert len(service.base_instructions) <= MAX_INSTRUCTION_CHARS
+    # The persona must leave the full per-phrase budget free; otherwise the
+    # anime delivery directions are silently truncated on every call.
+    assert (
+        len(service.base_instructions) + len(PHRASE_MARKER) + MAX_EXTRA_CHARS
+        <= MAX_INSTRUCTION_CHARS
+    )
     # and it must leave room for a per-phrase addition
     combined = service._build_instructions("slow and solemn")
     assert len(combined) <= MAX_INSTRUCTION_CHARS
